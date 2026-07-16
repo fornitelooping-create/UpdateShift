@@ -1,0 +1,403 @@
+import { useEffect, useRef, useState, useCallback } from "react";
+import { sounds } from "@/lib/sounds";
+import { getMicStream, applyOutputDevice } from "@/lib/audioDeviceSettings";
+
+/**
+ * Hook de gestion des salons vocaux Shift (groupe, plusieurs personnes).
+ * - Connexion au WebSocket Render (présence + signalisation WebRTC)
+ * - joinVoice / leaveVoice
+ * - Audio réel : une connexion WebRTC peer-to-peer par paire de membres
+ *   présents dans le même salon (topologie "mesh")
+ * - Mise à jour de l'UI en temps réel
+ */
+
+// 🔥 Remplace par ton URL Render
+const WS_URL = "wss://websocketshift.onrender.com";
+
+// See useVoiceCall.js for details: STUN alone isn't enough when a peer is
+// on a restrictive network (mobile data, corporate Wi-Fi, CGNAT, etc.) —
+// audio silently fails to flow even though the room "connects". TURN
+// servers below relay the media in that case.
+// ⚠️ openrelay.metered.ca is a free public TURN, fine for testing but not
+// guaranteed for production — swap in your own TURN credentials for that.
+const ICE_SERVERS = [
+  { urls: "stun:stun.l.google.com:19302" },
+  {
+    urls: "turn:openrelay.metered.ca:80",
+    username: "openrelayproject",
+    credential: "openrelayproject",
+  },
+  {
+    urls: "turn:openrelay.metered.ca:443",
+    username: "openrelayproject",
+    credential: "openrelayproject",
+  },
+  {
+    urls: "turn:openrelay.metered.ca:443?transport=tcp",
+    username: "openrelayproject",
+    credential: "openrelayproject",
+  },
+];
+
+export function useVoiceChannel(user) {
+  const wsRef = useRef(null);
+
+  // channelId -> [userId, userId, ...]
+  const [voiceMembers, setVoiceMembers] = useState({});
+  const [connected, setConnected] = useState(false);
+  const [currentVoiceChannel, setCurrentVoiceChannel] = useState(null);
+  const [muted, setMuted] = useState(false);
+
+  // userId -> true/false — état "micro coupé" de chaque membre présent
+  // dans un salon vocal (diffusé par le serveur, voir "voice-mute-state").
+  const [mutedMembers, setMutedMembers] = useState({});
+
+  // Mirrors used inside the stable ws.onmessage closure
+  const currentVoiceChannelRef = useRef(null);
+  const voiceMembersRef = useRef({});
+  useEffect(() => { currentVoiceChannelRef.current = currentVoiceChannel; }, [currentVoiceChannel]);
+  useEffect(() => { voiceMembersRef.current = voiceMembers; }, [voiceMembers]);
+
+  const localStreamRef = useRef(null);
+  const peersRef = useRef({}); // userId -> RTCPeerConnection
+  const audioElsRef = useRef({}); // userId -> <audio>
+  const pendingCandidatesRef = useRef({}); // userId -> queued ICE candidates received before that peer's remoteDescription was set
+
+  // ---------------------------------------------------------
+  // ENVOYER UN MESSAGE AU SERVEUR
+  // ---------------------------------------------------------
+  const send = useCallback((data) => {
+    if (wsRef.current?.readyState === WebSocket.OPEN) {
+      wsRef.current.send(JSON.stringify(data));
+    }
+  }, []);
+
+  // ---------------------------------------------------------
+  // AUDIO HELPERS
+  // ---------------------------------------------------------
+  const attachRemoteAudio = (peerUserId, stream) => {
+    let audioEl = audioElsRef.current[peerUserId];
+    if (!audioEl) {
+      audioEl = document.createElement("audio");
+      audioEl.autoplay = true;
+      document.body.appendChild(audioEl);
+      audioElsRef.current[peerUserId] = audioEl;
+    }
+    audioEl.srcObject = stream;
+    applyOutputDevice(audioEl);
+    audioEl.play().catch(() => {});
+  };
+
+  const removePeer = (peerUserId) => {
+    peersRef.current[peerUserId]?.close();
+    delete peersRef.current[peerUserId];
+    delete pendingCandidatesRef.current[peerUserId];
+    const audioEl = audioElsRef.current[peerUserId];
+    if (audioEl) {
+      audioEl.srcObject = null;
+      audioEl.remove();
+      delete audioElsRef.current[peerUserId];
+    }
+  };
+
+  // Applies any ICE candidates for peerUserId that arrived before its
+  // RTCPeerConnection had a remote description set (see the
+  // "voice-ice-candidate" handler below for why this is needed).
+  const flushPendingCandidates = async (peerUserId) => {
+    const queued = pendingCandidatesRef.current[peerUserId] || [];
+    delete pendingCandidatesRef.current[peerUserId];
+    const pc = peersRef.current[peerUserId];
+    for (const candidate of queued) {
+      try {
+        await pc?.addIceCandidate(new RTCIceCandidate(candidate));
+      } catch {
+        // ignore stray/late candidates
+      }
+    }
+  };
+
+  const closeAllPeers = () => {
+    Object.keys(peersRef.current).forEach(removePeer);
+    pendingCandidatesRef.current = {};
+  };
+
+  const createPeer = (peerUserId, channelId) => {
+    const pc = new RTCPeerConnection({ iceServers: ICE_SERVERS });
+    pc.onicecandidate = (e) => {
+      if (e.candidate) {
+        send({ type: "voice-ice-candidate", targetUserId: peerUserId, channelId, candidate: e.candidate });
+      }
+    };
+    pc.ontrack = (e) => attachRemoteAudio(peerUserId, e.streams[0]);
+    if (localStreamRef.current) {
+      localStreamRef.current.getTracks().forEach((t) => pc.addTrack(t, localStreamRef.current));
+    }
+    peersRef.current[peerUserId] = pc;
+    return pc;
+  };
+
+  // The person JOINING is the one who initiates offers to everyone
+  // already in the room — avoids both sides racing to send an offer.
+  const connectToExistingPeer = useCallback(async (peerUserId, channelId) => {
+    const pc = createPeer(peerUserId, channelId);
+    const offer = await pc.createOffer();
+    await pc.setLocalDescription(offer);
+    send({ type: "voice-offer", targetUserId: peerUserId, channelId, offer });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [send]);
+
+  // ---------------------------------------------------------
+  // JOIN VOICE CHANNEL
+  // ---------------------------------------------------------
+  const joinVoice = useCallback(async (channelId) => {
+    if (!user?.id) return;
+
+    // Already in this exact channel — nothing to do.
+    if (currentVoiceChannelRef.current === channelId) return;
+
+    // Switching channels: tear down the previous one first.
+    if (currentVoiceChannelRef.current) {
+      closeAllPeers();
+      send({ type: "leaveVoice", channelId: currentVoiceChannelRef.current, userId: user.id });
+      setVoiceMembers((prev) => {
+        const list = prev[currentVoiceChannelRef.current] || [];
+        return { ...prev, [currentVoiceChannelRef.current]: list.filter((id) => id !== user.id) };
+      });
+      localStreamRef.current?.getTracks().forEach((t) => t.stop());
+      localStreamRef.current = null;
+      sounds.playLeaveVoice();
+    }
+
+    try {
+      localStreamRef.current = await getMicStream();
+    } catch {
+      // Micro refusé/indisponible : on rejoint quand même pour la
+      // présence, mais aucun son ne sera envoyé ni reçu depuis ce poste.
+    }
+
+    setCurrentVoiceChannel(channelId);
+    send({ type: "joinVoice", channelId, userId: user.id });
+    sounds.playJoinVoice();
+
+    // Le serveur ne renvoie pas l'événement "userJoinedVoice" à celui qui
+    // vient de rejoindre (seulement aux autres déjà présents) — on
+    // s'ajoute donc nous-mêmes localement pour se voir dans la liste.
+    setVoiceMembers((prev) => {
+      const list = prev[channelId] || [];
+      if (list.includes(user.id)) return prev;
+      return { ...prev, [channelId]: [...list, user.id] };
+    });
+
+    const existingMembers = (voiceMembersRef.current[channelId] || []).filter((id) => id !== user.id);
+    existingMembers.forEach((peerId) => connectToExistingPeer(peerId, channelId));
+  }, [send, user?.id, connectToExistingPeer]);
+
+  // ---------------------------------------------------------
+  // LEAVE VOICE CHANNEL
+  // ---------------------------------------------------------
+  const leaveVoice = useCallback(() => {
+    if (!currentVoiceChannelRef.current || !user?.id) return;
+
+    send({
+      type: "leaveVoice",
+      channelId: currentVoiceChannelRef.current,
+      userId: user.id,
+    });
+
+    setVoiceMembers((prev) => {
+      const list = prev[currentVoiceChannelRef.current] || [];
+      return { ...prev, [currentVoiceChannelRef.current]: list.filter((id) => id !== user.id) };
+    });
+
+    closeAllPeers();
+    localStreamRef.current?.getTracks().forEach((t) => t.stop());
+    localStreamRef.current = null;
+    setCurrentVoiceChannel(null);
+    setMuted(false);
+    setMutedMembers((prev) => {
+      const next = { ...prev };
+      delete next[user.id];
+      return next;
+    });
+    sounds.playLeaveVoice();
+  }, [send, user?.id]);
+
+  const toggleMute = useCallback(() => {
+    if (!localStreamRef.current || !user?.id) return;
+    setMuted((prevMuted) => {
+      const next = !prevMuted;
+      localStreamRef.current.getAudioTracks().forEach((t) => (t.enabled = !next));
+
+      // On informe les autres membres du salon pour qu'ils affichent le
+      // petit badge "micro coupé" sur notre avatar.
+      if (currentVoiceChannelRef.current) {
+        send({
+          type: "voice-mute-state",
+          channelId: currentVoiceChannelRef.current,
+          userId: user.id,
+          muted: next,
+        });
+      }
+      setMutedMembers((prev) => ({ ...prev, [user.id]: next }));
+
+      return next;
+    });
+  }, [send, user?.id]);
+
+  // ---------------------------------------------------------
+  // CONNEXION AU SERVEUR WEBSOCKET RENDER
+  // ---------------------------------------------------------
+  useEffect(() => {
+    if (!user?.id) {
+      console.warn("[useVoiceChannel] pas de user.id, connexion websocket non tentée", user);
+      return;
+    }
+
+    console.log("[useVoiceChannel] tentative de connexion à", WS_URL, "pour user", user.id);
+
+    let ws;
+    try {
+      ws = new WebSocket(WS_URL);
+    } catch (err) {
+      console.error("[useVoiceChannel] échec de création du WebSocket :", err);
+      return;
+    }
+    wsRef.current = ws;
+
+    ws.onopen = () => {
+      console.log("[useVoiceChannel] websocket connecté");
+      setConnected(true);
+      send({ type: "register", userId: user.id });
+    };
+
+    ws.onclose = (event) => {
+      console.warn("[useVoiceChannel] websocket fermé", event.code, event.reason);
+      setConnected(false);
+    };
+
+    ws.onerror = (event) => {
+      console.error("[useVoiceChannel] erreur websocket", event);
+      setConnected(false);
+    };
+
+    ws.onmessage = async (event) => {
+      let msg;
+      try {
+        msg = JSON.parse(event.data);
+      } catch {
+        return;
+      }
+
+      // -----------------------------------------------------
+      // INITIAL STATE (sent right after "register")
+      // -----------------------------------------------------
+      if (msg.type === "voiceState") {
+        setVoiceMembers(msg.voiceMembers || {});
+        return;
+      }
+
+      // -----------------------------------------------------
+      // USER JOINED VOICE
+      // -----------------------------------------------------
+      if (msg.type === "userJoinedVoice") {
+        setVoiceMembers((prev) => {
+          const list = prev[msg.channelId] || [];
+          if (list.includes(msg.userId)) return prev;
+          return { ...prev, [msg.channelId]: [...list, msg.userId] };
+        });
+        // We don't initiate anything here: whoever just joined is the
+        // one sending us a "voice-offer" (see joinVoice above).
+        return;
+      }
+
+      // -----------------------------------------------------
+      // USER LEFT VOICE
+      // -----------------------------------------------------
+      if (msg.type === "userLeftVoice") {
+        setVoiceMembers((prev) => {
+          const list = prev[msg.channelId] || [];
+          return { ...prev, [msg.channelId]: list.filter((id) => id !== msg.userId) };
+        });
+        setMutedMembers((prev) => {
+          const next = { ...prev };
+          delete next[msg.userId];
+          return next;
+        });
+        if (msg.channelId === currentVoiceChannelRef.current) {
+          removePeer(msg.userId);
+        }
+        return;
+      }
+
+      // -----------------------------------------------------
+      // UN MEMBRE COUPE / RÉACTIVE SON MICRO
+      // -----------------------------------------------------
+      if (msg.type === "voice-mute-state") {
+        setMutedMembers((prev) => ({ ...prev, [msg.userId]: !!msg.muted }));
+        return;
+      }
+
+      // -----------------------------------------------------
+      // WEBRTC SIGNALING FOR VOICE CHANNELS
+      // -----------------------------------------------------
+      if (msg.type === "voice-offer" && msg.channelId === currentVoiceChannelRef.current) {
+        const pc = createPeer(msg.fromUserId, msg.channelId);
+        await pc.setRemoteDescription(new RTCSessionDescription(msg.offer));
+        await flushPendingCandidates(msg.fromUserId);
+        const answer = await pc.createAnswer();
+        await pc.setLocalDescription(answer);
+        send({ type: "voice-answer", targetUserId: msg.fromUserId, channelId: msg.channelId, answer });
+        return;
+      }
+
+      if (msg.type === "voice-answer") {
+        const pc = peersRef.current[msg.fromUserId];
+        if (pc) {
+          await pc.setRemoteDescription(new RTCSessionDescription(msg.answer));
+          await flushPendingCandidates(msg.fromUserId);
+        }
+        return;
+      }
+
+      if (msg.type === "voice-ice-candidate" && msg.candidate) {
+        // Same bug as in the private-call hook: onmessage handlers are
+        // async, so a candidate for a peer whose offer/answer exchange
+        // hasn't finished awaiting yet (no remoteDescription set) would
+        // throw in addIceCandidate and get silently dropped, sometimes
+        // causing "connected but silent" calls. Queue it instead.
+        const pc = peersRef.current[msg.fromUserId];
+        if (pc && pc.remoteDescription) {
+          try {
+            await pc.addIceCandidate(new RTCIceCandidate(msg.candidate));
+          } catch {
+            // ignore stray/late candidates
+          }
+        } else {
+          if (!pendingCandidatesRef.current[msg.fromUserId]) pendingCandidatesRef.current[msg.fromUserId] = [];
+          pendingCandidatesRef.current[msg.fromUserId].push(msg.candidate);
+        }
+        return;
+      }
+    };
+
+    return () => {
+      ws.close();
+      wsRef.current = null;
+      closeAllPeers();
+      localStreamRef.current?.getTracks().forEach((t) => t.stop());
+      localStreamRef.current = null;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user?.id, send]);
+
+  return {
+    connected,
+    currentVoiceChannel,
+    voiceMembers,
+    muted,
+    mutedMembers,
+    joinVoice,
+    leaveVoice,
+    toggleMute,
+  };
+}

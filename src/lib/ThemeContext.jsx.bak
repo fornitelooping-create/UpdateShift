@@ -1,0 +1,45 @@
+import React, { createContext, useContext, useEffect, useState } from "react";
+
+const STORAGE_KEY = "shift-theme";
+
+// Les 3 thèmes disponibles, façon Discord.
+export const THEMES = [
+  { id: "dark", label: "Sombre" },
+  { id: "light", label: "Clair" },
+  { id: "amoled", label: "Amoled" },
+];
+
+const ThemeContext = createContext({
+  theme: "dark",
+  setTheme: () => {},
+});
+
+function getInitialTheme() {
+  if (typeof window === "undefined") return "dark";
+  const stored = window.localStorage.getItem(STORAGE_KEY);
+  if (stored && THEMES.some((t) => t.id === stored)) return stored;
+  return "dark";
+}
+
+export function ThemeProvider({ children }) {
+  const [theme, setThemeState] = useState(getInitialTheme);
+
+  useEffect(() => {
+    document.documentElement.setAttribute("data-theme", theme);
+    window.localStorage.setItem(STORAGE_KEY, theme);
+  }, [theme]);
+
+  const setTheme = (id) => {
+    if (THEMES.some((t) => t.id === id)) setThemeState(id);
+  };
+
+  return (
+    <ThemeContext.Provider value={{ theme, setTheme }}>
+      {children}
+    </ThemeContext.Provider>
+  );
+}
+
+export function useTheme() {
+  return useContext(ThemeContext);
+}

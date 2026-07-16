@@ -1,0 +1,206 @@
+{
+  "name": "Shift",
+  "version": "1.0.3",
+  "productName": "Shift",
+  "private": true,
+  "description": "Shift desktop app",
+  "author": "looping",
+  "scripts": {
+    "dev": "vite",
+    "prebuild": "node scripts/bump-version.js",
+    "build": "vite build",
+    "lint": "eslint . --quiet",
+    "lint:fix": "eslint . --fix",
+    "typecheck": "tsc -p ./jsconfig.json",
+    "preview": "vite preview",
+    "electron:dev": "concurrently \"vite\" \"wait-on http://localhost:5173 && cross-env NODE_ENV=development electron .\"",
+    "electron:build": "vite build --config vite.electron.config.js && electron-builder",
+    "electron:preview": "vite build --config vite.electron.config.js && cross-env NODE_ENV=production electron ."
+  },
+  "dependencies": {
+    "@emailjs/browser": "^4.4.1",
+    "@hello-pangea/dnd": "^17.0.0",
+    "@hookform/resolvers": "^4.1.2",
+    "@radix-ui/react-accordion": "^1.2.3",
+    "@radix-ui/react-alert-dialog": "^1.1.6",
+    "@radix-ui/react-aspect-ratio": "^1.1.2",
+    "@radix-ui/react-avatar": "^1.1.3",
+    "@radix-ui/react-checkbox": "^1.1.4",
+    "@radix-ui/react-collapsible": "^1.1.3",
+    "@radix-ui/react-context-menu": "^2.2.6",
+    "@radix-ui/react-dialog": "^1.1.6",
+    "@radix-ui/react-dropdown-menu": "^2.1.6",
+    "@radix-ui/react-hover-card": "^1.1.6",
+    "@radix-ui/react-label": "^2.1.2",
+    "@radix-ui/react-menubar": "^1.1.6",
+    "@radix-ui/react-navigation-menu": "^1.2.5",
+    "@radix-ui/react-popover": "^1.1.6",
+    "@radix-ui/react-progress": "^1.1.2",
+    "@radix-ui/react-radio-group": "^1.2.3",
+    "@radix-ui/react-scroll-area": "^1.2.3",
+    "@radix-ui/react-select": "^2.1.6",
+    "@radix-ui/react-separator": "^1.1.2",
+    "@radix-ui/react-slider": "^1.2.3",
+    "@radix-ui/react-slot": "^1.1.2",
+    "@radix-ui/react-switch": "^1.1.3",
+    "@radix-ui/react-tabs": "^1.1.3",
+    "@radix-ui/react-toast": "^1.2.2",
+    "@radix-ui/react-toggle": "^1.1.2",
+    "@radix-ui/react-toggle-group": "^1.1.2",
+    "@radix-ui/react-tooltip": "^1.1.8",
+    "@stripe/react-stripe-js": "^3.0.0",
+    "@stripe/stripe-js": "^5.2.0",
+    "@supabase/supabase-js": "^2.110.2",
+    "@tanstack/react-query": "^5.84.1",
+    "canvas-confetti": "^1.9.4",
+    "class-variance-authority": "^0.7.1",
+    "clsx": "^2.1.1",
+    "cmdk": "^1.0.0",
+    "date-fns": "^3.6.0",
+    "electron-log": "^5.4.4",
+    "electron-updater": "^6.8.9",
+    "embla-carousel-react": "^8.5.2",
+    "framer-motion": "^11.16.4",
+    "html2canvas": "^1.4.1",
+    "input-otp": "^1.4.2",
+    "jspdf": "^4.2.1",
+    "lodash": "^4.17.21",
+    "lucide-react": "^0.475.0",
+    "moment": "^2.30.1",
+    "next-themes": "^0.4.4",
+    "react": "^18.2.0",
+    "react-day-picker": "^8.10.1",
+    "react-dom": "^18.2.0",
+    "react-hook-form": "^7.54.2",
+    "react-hot-toast": "^2.6.0",
+    "react-leaflet": "^4.2.1",
+    "react-markdown": "^9.0.1",
+    "react-quill": "^2.0.0",
+    "react-resizable-panels": "^2.1.7",
+    "react-router-dom": "^6.26.0",
+    "recharts": "^2.15.4",
+    "sonner": "^2.0.1",
+    "tailwind-merge": "^3.0.2",
+    "tailwindcss-animate": "^1.0.7",
+    "three": "^0.171.0",
+    "vaul": "^1.1.2",
+    "zod": "^3.24.2"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.19.0",
+    "@types/node": "^22.13.5",
+    "@types/react": "^18.2.66",
+    "@types/react-dom": "^18.2.22",
+    "@vitejs/plugin-react": "^4.3.4",
+    "autoprefixer": "^10.4.20",
+    "baseline-browser-mapping": "^2.8.32",
+    "concurrently": "^8.2.2",
+    "cross-env": "^7.0.3",
+    "electron": "^30.0.0",
+    "electron-builder": "^24.13.3",
+    "eslint": "^9.19.0",
+    "eslint-plugin-react": "^7.37.4",
+    "eslint-plugin-react-hooks": "^5.0.0",
+    "eslint-plugin-react-refresh": "^0.4.18",
+    "eslint-plugin-unused-imports": "^4.3.0",
+    "globals": "^15.14.0",
+    "postcss": "^8.5.3",
+    "tailwindcss": "^3.4.17",
+    "typescript": "^5.8.2",
+    "vite": "^6.1.0",
+    "wait-on": "^7.2.0"
+  },
+  "main": "electron/main.cjs",
+  "build": {
+    "appId": "com.shift.app",
+    "productName": "Shift",
+    "artifactName": "ShiftSetup.${ext}",
+    "directories": {
+      "output": "dist-electron"
+    },
+    "files": [
+      "dist/**/*",
+      "electron/**/*",
+      "!node_modules/three/**/*",
+      "!node_modules/framer-motion/**/*",
+      "!node_modules/moment/**/*",
+      "!node_modules/react-quill/**/*",
+      "!node_modules/quill/**/*",
+      "!node_modules/@stripe/**/*",
+      "!node_modules/react-leaflet/**/*",
+      "!node_modules/leaflet/**/*",
+      "!node_modules/recharts/**/*",
+      "!node_modules/d3-**/**/*",
+      "!node_modules/embla-carousel-react/**/*",
+      "!node_modules/embla-carousel/**/*",
+      "!node_modules/html2canvas/**/*",
+      "!node_modules/jspdf/**/*",
+      "!node_modules/canvas-confetti/**/*",
+      "!node_modules/@radix-ui/**/*",
+      "!node_modules/react-hook-form/**/*",
+      "!node_modules/@hookform/**/*",
+      "!node_modules/date-fns/**/*",
+      "!node_modules/lodash/**/*",
+      "!node_modules/@supabase/**/*",
+      "!node_modules/@tanstack/**/*",
+      "!node_modules/react-markdown/**/*",
+      "!node_modules/react-resizable-panels/**/*",
+      "!node_modules/react-router-dom/**/*",
+      "!node_modules/react-hot-toast/**/*",
+      "!node_modules/sonner/**/*",
+      "!node_modules/vaul/**/*",
+      "!node_modules/zod/**/*",
+      "!node_modules/cmdk/**/*",
+      "!node_modules/next-themes/**/*",
+      "!node_modules/@emailjs/**/*",
+      "!node_modules/@hello-pangea/**/*",
+      "!node_modules/class-variance-authority/**/*",
+      "!node_modules/clsx/**/*",
+      "!node_modules/tailwind-merge/**/*",
+      "!node_modules/tailwindcss-animate/**/*",
+      "!node_modules/lucide-react/**/*",
+      "!node_modules/input-otp/**/*",
+      "!node_modules/react-day-picker/**/*"
+    ],
+    "asar": true,
+    "compression": "maximum",
+    "publish": {
+      "provider": "github",
+      "owner": "fornitelooping-create",
+      "repo": "UpdateShift"
+    },
+    "mac": {
+      "category": "public.app-category.social-networking",
+      "target": [
+        {
+          "target": "dmg",
+          "arch": [
+            "x64",
+            "arm64"
+          ]
+        }
+      ]
+    },
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "src/assets/shift.ico"
+    },
+    "linux": {
+      "target": [
+        {
+          "target": "AppImage",
+          "arch": [
+            "x64"
+          ]
+        }
+      ]
+    }
+  }
+}
