@@ -29,3 +29,12 @@ dist-ssr
 
 .env
 .vite
+
+
+dist-electron/
+dist/
+*.exe
+*.dll
+*.blockmap
+win-unpacked/
+
