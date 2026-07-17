@@ -5,18 +5,6 @@
     <link rel="icon" type="image/png" href="https://media.db.com/images/public/6a4a32f9c1395028e325c421/96d3d9602_shift.png" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <link rel="manifest" href="/manifest.json" />
-
-    <!-- PWA : couleur de thème (barre d'adresse Android) -->
-    <meta name="theme-color" content="#1e1f22" />
-
-    <!-- PWA sur iOS : Safari ignore largement manifest.json, ces balises
-         sont ce qui permet un "Ajouter à l'écran d'accueil" propre
-         (icône + plein écran sans barre Safari) sur iPhone/iPad. -->
-    <meta name="apple-mobile-web-app-capable" content="yes" />
-    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
-    <meta name="apple-mobile-web-app-title" content="Shift" />
-    <link rel="apple-touch-icon" href="/shift-logo.png" />
-
     <title>Shift</title>
     <style>
       #shift-splash {

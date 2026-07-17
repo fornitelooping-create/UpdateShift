@@ -1,6 +1,6 @@
 {
   "name": "Shift",
-  "version": "1.0.3",
+  "version": "1.0.1",
   "productName": "Shift",
   "private": true,
   "description": "Shift desktop app",
@@ -14,7 +14,7 @@
     "typecheck": "tsc -p ./jsconfig.json",
     "preview": "vite preview",
     "electron:dev": "concurrently \"vite\" \"wait-on http://localhost:5173 && cross-env NODE_ENV=development electron .\"",
-    "electron:build": "vite build --config vite.electron.config.js && electron-builder",
+    "electron:build": "vite build --config vite.electron.config.js && electron-builder --publish always",
     "electron:preview": "vite build --config vite.electron.config.js && cross-env NODE_ENV=production electron ."
   },
   "dependencies": {
@@ -167,7 +167,8 @@
     "publish": {
       "provider": "github",
       "owner": "fornitelooping-create",
-      "repo": "UpdateShift"
+      "repo": "UpdateShift",
+	"releaseType": "release"
     },
     "mac": {
       "category": "public.app-category.social-networking",

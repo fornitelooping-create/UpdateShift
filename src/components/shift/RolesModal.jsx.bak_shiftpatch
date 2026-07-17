@@ -80,10 +80,10 @@ export default function RolesModal({ server, members, onClose, onUpdate }) {
   ];
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4" onClick={onClose}>
-      <div className="bg-[var(--bg-primary)] rounded-2xl w-full max-w-[700px] max-h-[85vh] flex flex-col sm:flex-row overflow-hidden shadow-2xl" onClick={(e) => e.stopPropagation()}>
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60" onClick={onClose}>
+      <div className="bg-[var(--bg-primary)] rounded-2xl w-[700px] max-h-[80vh] flex overflow-hidden shadow-2xl" onClick={(e) => e.stopPropagation()}>
         {/* Roles list */}
-        <div className="w-full sm:w-56 max-h-40 sm:max-h-none bg-[var(--bg-secondary)] flex flex-col flex-shrink-0">
+        <div className="w-56 bg-[var(--bg-secondary)] flex flex-col flex-shrink-0">
           <div className="p-4 border-b border-[var(--bg-tertiary)]">
             <h3 className="text-white font-bold flex items-center gap-2">
               <Shield className="w-4 h-4" />

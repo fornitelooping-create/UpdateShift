@@ -2,10 +2,9 @@ import { db } from '@/lib/localDb';
 
 import React, { useState } from "react";
 
-import { X, Camera, Copy, Check, Shield, LogOut, Trash2, Loader2, AlertCircle, Hash, Volume2, Settings2, Plus, ChevronLeft } from "lucide-react";
+import { X, Camera, Copy, Check, Shield, LogOut, Trash2, Loader2, AlertCircle, Hash, Volume2, Settings2, Plus } from "lucide-react";
 import UserAvatar from "./UserAvatar";
 import ChannelSettingsModal from "./ChannelSettingsModal";
-import { useIsMobile } from "@/hooks/use-mobile";
 
 export default function ServerSettingsModal({
   server,
@@ -28,8 +27,6 @@ export default function ServerSettingsModal({
   onUpdateChannelAccess
 }) {
   const [tab, setTab] = useState("overview");
-  const isMobile = useIsMobile();
-  const [mobileShowContent, setMobileShowContent] = useState(false);
   const [codeCopied, setCodeCopied] = useState(false);
   const [iconUploading, setIconUploading] = useState(false);
   const [selectedNewOwner, setSelectedNewOwner] = useState("");
@@ -82,33 +79,18 @@ export default function ServerSettingsModal({
   return (
     <div className="fixed inset-0 z-50 flex bg-black/60" onClick={onClose}>
       <div
-        className={
-          isMobile
-            ? "flex flex-col w-full h-full bg-[var(--bg-primary)] overflow-hidden"
-            : "m-auto flex bg-[var(--bg-primary)] rounded-2xl w-[760px] max-h-[80vh] shadow-2xl overflow-hidden"
-        }
+        className="m-auto flex bg-[var(--bg-primary)] rounded-2xl w-[760px] max-h-[80vh] shadow-2xl overflow-hidden"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Sidebar */}
-        <div
-          className={
-            isMobile
-              ? mobileShowContent
-                ? "hidden"
-                : "w-full h-full bg-[var(--bg-secondary)] flex flex-col p-3 overflow-y-auto"
-              : "w-48 bg-[var(--bg-secondary)] flex flex-col flex-shrink-0 p-3"
-          }
-        >
+        <div className="w-48 bg-[var(--bg-secondary)] flex flex-col flex-shrink-0 p-3">
           <p className="text-[var(--text-muted)] text-xs font-semibold uppercase tracking-wide px-2 mb-2 truncate">
             {server?.name}
           </p>
           {TABS.map((t) => (
             <button
               key={t.id}
-              onClick={() => {
-                setTab(t.id);
-                if (isMobile) setMobileShowContent(true);
-              }}
+              onClick={() => setTab(t.id)}
               className={`text-left px-3 py-2 rounded-lg text-sm font-medium transition mb-0.5 ${
                 tab === t.id ? "bg-[var(--bg-modifier-hover)] text-white" : "text-[var(--text-secondary)] hover:bg-[var(--bg-modifier-hover)] hover:text-white"
               } ${t.id === "leave" ? "text-[#ed4245]" : ""}`}
@@ -127,16 +109,9 @@ export default function ServerSettingsModal({
         </div>
 
         {/* Content */}
-        <div className={isMobile ? (mobileShowContent ? "w-full h-full flex flex-col overflow-hidden" : "hidden") : "flex-1 flex flex-col overflow-hidden"}>
+        <div className="flex-1 flex flex-col overflow-hidden">
           <div className="flex items-center justify-between px-6 py-4 border-b border-[var(--border-default)]">
-            <div className="flex items-center gap-2 min-w-0">
-              {isMobile && (
-                <button onClick={() => setMobileShowContent(false)} className="text-[var(--text-muted)] hover:text-white transition -ml-2 p-1">
-                  <ChevronLeft className="w-5 h-5" />
-                </button>
-              )}
-              <h2 className="text-white font-bold text-lg truncate">Paramètres du serveur</h2>
-            </div>
+            <h2 className="text-white font-bold text-lg">Paramètres du serveur</h2>
             <button onClick={onClose} className="text-[var(--text-muted)] hover:text-white transition">
               <X className="w-5 h-5" />
             </button>

@@ -1,7 +1,6 @@
 import React, { useState } from "react";
 
-import { X, Hash, Volume2, Trash2, Lock, Globe, ChevronLeft } from "lucide-react";
-import { useIsMobile } from "@/hooks/use-mobile";
+import { X, Hash, Volume2, Trash2, Lock, Globe } from "lucide-react";
 
 export default function ChannelSettingsModal({
   channel,
@@ -16,8 +15,6 @@ export default function ChannelSettingsModal({
   initialTab = "overview"
 }) {
   const [tab, setTab] = useState(initialTab);
-  const isMobile = useIsMobile();
-  const [mobileShowContent, setMobileShowContent] = useState(false);
   const [name, setName] = useState(channel.name);
   const [categoryChoice, setCategoryChoice] = useState(channel.category || "");
   const [newCategory, setNewCategory] = useState("");
@@ -56,23 +53,11 @@ export default function ChannelSettingsModal({
   return (
     <div className="fixed inset-0 z-50 flex bg-black/60" onClick={onClose}>
       <div
-        className={
-          isMobile
-            ? "flex flex-col w-full h-full bg-[var(--bg-primary)] overflow-hidden"
-            : "m-auto flex bg-[var(--bg-primary)] rounded-2xl w-[640px] max-h-[75vh] shadow-2xl overflow-hidden"
-        }
+        className="m-auto flex bg-[var(--bg-primary)] rounded-2xl w-[640px] max-h-[75vh] shadow-2xl overflow-hidden"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Sidebar */}
-        <div
-          className={
-            isMobile
-              ? mobileShowContent
-                ? "hidden"
-                : "w-full h-full bg-[var(--bg-secondary)] flex flex-col p-3 overflow-y-auto"
-              : "w-44 bg-[var(--bg-secondary)] flex flex-col flex-shrink-0 p-3"
-          }
-        >
+        <div className="w-44 bg-[var(--bg-secondary)] flex flex-col flex-shrink-0 p-3">
           <p className="text-[var(--text-muted)] text-xs font-semibold uppercase tracking-wide px-2 mb-2 truncate flex items-center gap-1.5">
             {channel.type === "voice" ? <Volume2 className="w-3.5 h-3.5" /> : <Hash className="w-3.5 h-3.5" />}
             {channel.name}
@@ -80,10 +65,7 @@ export default function ChannelSettingsModal({
           {TABS.map((t) => (
             <button
               key={t.id}
-              onClick={() => {
-                setTab(t.id);
-                if (isMobile) setMobileShowContent(true);
-              }}
+              onClick={() => setTab(t.id)}
               className={`text-left px-3 py-2 rounded-lg text-sm font-medium transition mb-0.5 ${
                 tab === t.id ? "bg-[var(--bg-modifier-hover)] text-white" : "text-[var(--text-secondary)] hover:bg-[var(--bg-modifier-hover)] hover:text-white"
               }`}
@@ -100,16 +82,9 @@ export default function ChannelSettingsModal({
         </div>
 
         {/* Content */}
-        <div className={isMobile ? (mobileShowContent ? "w-full h-full flex flex-col overflow-hidden" : "hidden") : "flex-1 flex flex-col overflow-hidden"}>
+        <div className="flex-1 flex flex-col overflow-hidden">
           <div className="flex items-center justify-between px-6 py-4 border-b border-[var(--border-default)]">
-            <div className="flex items-center gap-2 min-w-0">
-              {isMobile && (
-                <button onClick={() => setMobileShowContent(false)} className="text-[var(--text-muted)] hover:text-white transition -ml-2 p-1">
-                  <ChevronLeft className="w-5 h-5" />
-                </button>
-              )}
-              <h2 className="text-white font-bold text-lg truncate">Paramètres du salon</h2>
-            </div>
+            <h2 className="text-white font-bold text-lg">Paramètres du salon</h2>
             <button onClick={onClose} className="text-[var(--text-muted)] hover:text-white transition">
               <X className="w-5 h-5" />
             </button>

@@ -2,9 +2,8 @@ import { db } from '@/lib/localDb';
 
 import React, { useState, useEffect } from "react";
 
-import { X, Camera, Loader2, User, Shield, Mic, Volume2, AlertCircle, Bell, Play, Square, Upload, Music, Trash2, Palette, Check, Plus, Pencil, ChevronLeft } from "lucide-react";
+import { X, Camera, Loader2, User, Shield, Mic, Volume2, AlertCircle, Bell, Play, Square, Upload, Music, Trash2, Palette, Check, Plus, Pencil } from "lucide-react";
 import UserAvatar from "./UserAvatar";
-import { useIsMobile } from "@/hooks/use-mobile";
 import { useAudioDevices } from "@/hooks/useAudioDevices";
 import { sounds } from "@/lib/sounds";
 import { RINGTONE_PRESETS, CUSTOM_RINGTONE_ID, getRingtoneSettings, saveRingtoneSettings } from "@/lib/ringtoneSettings";
@@ -26,8 +25,6 @@ const MAX_CUSTOM_SOUND_MB = 8;
 
 export default function UserSettingsModal({ currentUser, onClose, onSave, onLogout, signalingUrl, onSaveSignalingUrl, signalingConnected }) {
   const [tab, setTab] = useState("profile");
-  const isMobile = useIsMobile();
-  const [mobileShowContent, setMobileShowContent] = useState(false);
   const [profile, setProfile] = useState(null);
   const [displayName, setDisplayName] = useState("");
   const [bio, setBio] = useState("");
@@ -211,31 +208,16 @@ export default function UserSettingsModal({ currentUser, onClose, onSave, onLogo
   return (
     <div className="fixed inset-0 z-50 flex bg-black/60" onClick={onClose}>
       <div
-        className={
-          isMobile
-            ? "flex flex-col w-full h-full bg-[var(--bg-primary)] overflow-hidden"
-            : "m-auto flex bg-[var(--bg-primary)] rounded-2xl w-[960px] max-h-[85vh] shadow-2xl overflow-hidden"
-        }
+        className="m-auto flex bg-[var(--bg-primary)] rounded-2xl w-[960px] max-h-[85vh] shadow-2xl overflow-hidden"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Sidebar */}
-        <div
-          className={
-            isMobile
-              ? mobileShowContent
-                ? "hidden"
-                : "w-full h-full bg-[var(--bg-secondary)] flex flex-col p-3 overflow-y-auto"
-              : "w-52 bg-[var(--bg-secondary)] flex flex-col flex-shrink-0 p-3"
-          }
-        >
+        <div className="w-52 bg-[var(--bg-secondary)] flex flex-col flex-shrink-0 p-3">
           <p className="text-[var(--text-muted)] text-xs font-semibold uppercase tracking-wide px-2 mb-2">Paramètres utilisateur</p>
           {TABS.map((t) => (
             <button
               key={t.id}
-              onClick={() => {
-                setTab(t.id);
-                if (isMobile) setMobileShowContent(true);
-              }}
+              onClick={() => setTab(t.id)}
               className={`flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition mb-0.5 ${
                 tab === t.id ? "bg-[var(--bg-modifier-hover)] text-white" : "text-[var(--text-secondary)] hover:bg-[var(--bg-modifier-hover)] hover:text-white"
               }`}
@@ -249,18 +231,11 @@ export default function UserSettingsModal({ currentUser, onClose, onSave, onLogo
         </div>
 
         {/* Content */}
-        <div className={isMobile ? (mobileShowContent ? "w-full h-full flex flex-col overflow-hidden" : "hidden") : "flex-1 flex flex-col overflow-hidden"}>
+        <div className="flex-1 flex flex-col overflow-hidden">
           <div className="flex items-center justify-between px-6 py-4 border-b border-[var(--border-default)]">
-            <div className="flex items-center gap-2 min-w-0">
-              {isMobile && (
-                <button onClick={() => setMobileShowContent(false)} className="text-[var(--text-muted)] hover:text-white transition -ml-2 p-1">
-                  <ChevronLeft className="w-5 h-5" />
-                </button>
-              )}
-              <h2 className="text-white font-bold text-lg truncate">
-                {TABS.find((t) => t.id === tab)?.label}
-              </h2>
-            </div>
+            <h2 className="text-white font-bold text-lg">
+              {TABS.find((t) => t.id === tab)?.label}
+            </h2>
             <button onClick={onClose} className="text-[var(--text-muted)] hover:text-white transition">
               <X className="w-5 h-5" />
             </button>
