@@ -111,7 +111,19 @@ export default function JoinServerModal({ currentUser, onClose, onJoined, onCrea
                 autoFocus
                 className="w-full bg-[var(--bg-tertiary)] text-white px-4 py-3 rounded-lg text-sm outline-none border border-transparent focus:border-[#5865f2] transition placeholder:text-[var(--text-muted)] mb-2"
               />
-              {error && <p className="text-red-400 text-sm mb-2">{error}</p>}
+              {error && (
+                <p className="text-red-400 text-sm mb-2 flex items-center justify-between gap-2">
+                  <span>{error}</span>
+                  <button
+                    type="button"
+                    onClick={() => setError("")}
+                    title="Fermer"
+                    className="p-0.5 rounded hover:bg-white/10 transition flex-shrink-0"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                </p>
+              )}
               <button
                 onClick={joinServer}
                 disabled={loading || !inviteCode.trim()}

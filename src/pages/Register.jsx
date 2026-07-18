@@ -6,7 +6,7 @@ import { Link } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { UserPlus, Mail, Lock, Loader2 } from "lucide-react";
+import { UserPlus, Mail, Lock, Loader2, X } from "lucide-react";
 import { InputOTP, InputOTPGroup, InputOTPSlot } from "@/components/ui/input-otp";
 import AuthLayout from "@/components/AuthLayout";
 import GoogleIcon from "@/components/GoogleIcon";
@@ -74,8 +74,16 @@ export default function Register() {
         }
       >
         {error && (
-          <div className="mb-4 p-3 rounded-lg bg-destructive/10 text-destructive text-sm">
-            {error}
+          <div className="mb-4 p-3 rounded-lg bg-destructive/10 text-destructive text-sm flex items-center justify-between gap-2">
+            <span>{error}</span>
+            <button
+              type="button"
+              onClick={() => setError("")}
+              title="Fermer"
+              className="p-0.5 rounded hover:bg-destructive/20 transition flex-shrink-0"
+            >
+              <X className="w-4 h-4" />
+            </button>
           </div>
         )}
         <form onSubmit={handleVerifyOtp} className="space-y-6">
@@ -139,8 +147,16 @@ export default function Register() {
       </div>
 
       {error && (
-        <div className="mb-4 p-3 rounded-lg bg-destructive/10 text-destructive text-sm">
-          {error}
+        <div className="mb-4 p-3 rounded-lg bg-destructive/10 text-destructive text-sm flex items-center justify-between gap-2">
+          <span>{error}</span>
+          <button
+            type="button"
+            onClick={() => setError("")}
+            title="Fermer"
+            className="p-0.5 rounded hover:bg-destructive/20 transition flex-shrink-0"
+          >
+            <X className="w-4 h-4" />
+          </button>
         </div>
       )}
 

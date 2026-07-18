@@ -6,7 +6,7 @@ import { Link, useSearchParams } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Lock, Loader2, AlertTriangle } from "lucide-react";
+import { Lock, Loader2, AlertTriangle, X } from "lucide-react";
 import AuthLayout from "@/components/AuthLayout";
 
 export default function ResetPassword() {
@@ -62,8 +62,16 @@ export default function ResetPassword() {
       subtitle="Enter your new password below"
     >
       {error && (
-        <div className="mb-4 p-3 rounded-lg bg-destructive/10 text-destructive text-sm">
-          {error}
+        <div className="mb-4 p-3 rounded-lg bg-destructive/10 text-destructive text-sm flex items-center justify-between gap-2">
+          <span>{error}</span>
+          <button
+            type="button"
+            onClick={() => setError("")}
+            title="Fermer"
+            className="p-0.5 rounded hover:bg-destructive/20 transition flex-shrink-0"
+          >
+            <X className="w-4 h-4" />
+          </button>
         </div>
       )}
       <form onSubmit={handleSubmit} className="space-y-4">

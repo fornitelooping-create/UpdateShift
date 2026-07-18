@@ -1,7 +1,7 @@
 import shiftLogo from '../assets/shift.ico';
 import React, { useState, useContext } from "react";
 import { ShiftAuthContext } from "@/lib/useShiftAuth";
-import { User, Lock, Loader2 } from "lucide-react";
+import { User, Lock, Loader2, X } from "lucide-react";
 
 export default function ShiftLogin() {
   const {
@@ -117,8 +117,16 @@ export default function ShiftLogin() {
         </div>
 
         {error && (
-          <div className="mb-4 p-3 rounded-lg bg-red-500/20 text-red-400 text-sm border border-red-500/30">
-            {error}
+          <div className="mb-4 p-3 rounded-lg bg-red-500/20 text-red-400 text-sm border border-red-500/30 flex items-center justify-between gap-2">
+            <span>{error}</span>
+            <button
+              type="button"
+              onClick={() => setError("")}
+              title="Fermer"
+              className="p-0.5 rounded hover:bg-red-500/20 transition flex-shrink-0"
+            >
+              <X className="w-4 h-4" />
+            </button>
           </div>
         )}
 

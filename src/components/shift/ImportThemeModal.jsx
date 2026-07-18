@@ -1,5 +1,5 @@
 import React, { useState, useRef } from "react";
-import { X, Upload, Image as ImageIcon, Film, Loader2, Check } from "lucide-react";
+import { X, Upload, Image as ImageIcon, Film, Loader2, Check, AlertCircle } from "lucide-react";
 import { useTheme, SUPPORTED_BG_EXTENSIONS, BUILTIN_THEMES } from "@/lib/ThemeContext";
 import { db } from "@/lib/localDb";
 
@@ -208,9 +208,19 @@ export default function ImportThemeModal({ onClose }) {
           </div>
 
           {error && (
-            <p className="text-[#ed4245] text-sm flex items-center gap-1.5">
-              <X className="w-4 h-4" />
-              {error}
+            <p className="text-[#ed4245] text-sm flex items-center justify-between gap-1.5">
+              <span className="flex items-center gap-1.5">
+                <AlertCircle className="w-4 h-4 flex-shrink-0" />
+                {error}
+              </span>
+              <button
+                type="button"
+                onClick={() => setError(null)}
+                title="Fermer"
+                className="p-0.5 rounded hover:bg-white/10 transition flex-shrink-0"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
             </p>
           )}
         </div>
