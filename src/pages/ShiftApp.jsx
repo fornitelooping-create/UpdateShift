@@ -103,6 +103,12 @@ export default function ShiftApp() {
   const mobilePageRef = useRef(0);
   const mobileTrackRef = useRef(null);
   const mobileWrapRef = useRef(null);
+  // Trace globale de mes adhésions (id d'adhésion -> id de serveur),
+  // utilisée par la souscription temps réel ci-dessous (qui ne doit tourner
+  // qu'une fois, indépendamment du serveur sélectionné) pour détecter une
+  // expulsion même si on ne regarde pas ce serveur au moment où ça arrive.
+  const myMembershipsRef = useRef(new Map());
+
   const selectedServerRef = useRef(null);
 
   const MOBILE_MAX_PAGE = () => (selectedServerRef.current ? 2 : 1);
@@ -218,32 +224,45 @@ export default function ShiftApp() {
       if (type === "delete") {
         // Sur Supabase, un événement DELETE ne renvoie souvent QUE l'id de
         // la ligne supprimée (server_id / user_id absents), sauf si la
-        // table a REPLICA IDENTITY FULL. On ne peut donc pas filtrer sur
-        // data.server_id ici comme pour create/update : on regarde plutôt
-        // si cet id fait partie de la liste des membres actuellement
-        // affichée (déjà propre au serveur sélectionné).
-        let evictedMe = false;
-        setMembers((prev) => {
-          const removed = prev.find((m) => m.id === data.id);
-          if (removed && (removed.user_id || removed.id) === user?.id) {
-            evictedMe = true;
-          }
-          return prev.filter((m) => m.id !== data.id);
-        });
-        if (evictedMe && selectedServer) {
-          const kickedServerId = selectedServer.id;
+        // table a REPLICA IDENTITY FULL. Pour savoir si c'est MOI qu'on
+        // vient d'expulser (et de quel serveur), on ne peut donc pas se
+        // fier à data.server_id : on regarde plutôt dans myMembershipsRef,
+        // qui garde la correspondance id d'adhésion -> serveur pour TOUTES
+        // mes adhésions, pas seulement celles du serveur actuellement
+        // affiché — c'est ce qui permet au serveur de disparaître de la
+        // barre latérale même si on regardait autre chose au moment de
+        // l'expulsion.
+        const kickedServerId = myMembershipsRef.current.get(data.id);
+        if (kickedServerId) {
+          myMembershipsRef.current.delete(data.id);
           setServers((prev) => prev.filter((s) => s.id !== kickedServerId));
-          setSelectedServer((prev) => (prev && prev.id === kickedServerId ? null : prev));
-          setSelectedChannel(null);
-          // On était peut-être en vocal dans ce serveur : on s'en déconnecte
-          // immédiatement pour ne pas continuer à entendre/parler alors
-          // qu'on vient d'être expulsé.
-          leaveVoice();
+          if (selectedServerRef.current && selectedServerRef.current.id === kickedServerId) {
+            setSelectedServer(null);
+            setSelectedChannel(null);
+            setMembers([]);
+            // On était peut-être en vocal dans ce serveur : on s'en déconnecte
+            // immédiatement pour ne pas continuer à entendre/parler alors
+            // qu'on vient d'être expulsé.
+            leaveVoice();
+          }
         }
+        // Si le membre supprimé fait partie du serveur qu'on regarde en ce
+        // moment (que ce soit moi ou quelqu'un d'autre qu'on vient
+        // d'expulser), on le retire aussi de la liste de membres visible.
+        setMembers((prev) => prev.filter((m) => m.id !== data.id));
         return;
       }
 
-      if (!selectedServer || data.server_id !== selectedServer.id) return;
+      if (type === "create" && (data.user_id || data.id) === user?.id) {
+        // On vient de rejoindre un serveur (depuis un autre onglet, ou
+        // qu'on nous y a ajouté) : on le suit désormais nous aussi.
+        myMembershipsRef.current.set(data.id, data.server_id);
+        db.entities.Server.get(data.server_id).then((srv) => {
+          if (srv) setServers((prev) => (prev.some((s) => s.id === srv.id) ? prev : [...prev, srv]));
+        });
+      }
+
+      if (!selectedServerRef.current || data.server_id !== selectedServerRef.current.id) return;
       if (type === "create") {
         setMembers((prev) => (prev.some((m) => m.id === data.id) ? prev : [...prev, data]));
         cacheProfiles([data.user_id || data.id]);
@@ -252,7 +271,7 @@ export default function ShiftApp() {
       }
     });
     return unsubscribe;
-  }, [selectedServer]);
+  }, []);
 
   useEffect(() => {
     if (selectedServer) {
@@ -267,6 +286,10 @@ export default function ShiftApp() {
 
   const loadServers = async () => {
     const memberships = await db.entities.ServerMember.filter({ user_id: user.id });
+    // Garde une trace globale (id d'adhésion -> id de serveur), indépendante
+    // du serveur actuellement affiché, pour pouvoir détecter une expulsion
+    // même si on regarde un autre serveur ou une DM au moment où ça arrive.
+    myMembershipsRef.current = new Map(memberships.map((m) => [m.id, m.server_id]));
     const serverList = await Promise.all(
       memberships.map((m) => db.entities.Server.get(m.server_id))
     );
