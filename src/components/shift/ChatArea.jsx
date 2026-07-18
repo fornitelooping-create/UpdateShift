@@ -16,6 +16,15 @@ const COMPOSER_EMOJIS = [
   "👍", "👎", "👏", "🙏", "💪", "🔥", "🎉", "❤️", "💯", "✨"
 ];
 
+// Liste affichée dans l'aide façon Discord quand on tape "/" (uniquement
+// pour les utilisateurs ayant le droit d'exécuter des commandes).
+const AVAILABLE_COMMANDS = [
+  { name: "clear", usage: "/clear:20", description: "Supprime les 20 derniers messages de ce salon." },
+  { name: "ban", usage: '/ban "pseudo"', description: "Bannit définitivement un membre du serveur." },
+  { name: "ban", usage: '/ban "pseudo" "7d"', description: "Bannit temporairement (30m, 2h, 7d, 1w...)." },
+  { name: "unban", usage: '/unban "pseudo"', description: "Lève le bannissement d'un membre." }
+];
+
 // Parse une durée du type "30m", "2h", "7d", "1w" (secondes/minutes/heures/
 // jours/semaines, accepte aussi "s", "sec", "min", "j"/"jours", "sem") et
 // retourne un nombre de millisecondes, ou null si le format est invalide.
@@ -192,6 +201,22 @@ export default function ChatArea({
       expiresAt = new Date(Date.now() + ms).toISOString();
     }
 
+    // 1. L'expulsion est l'effet le plus important d'un ban : elle doit
+    //    TOUJOURS avoir lieu, même si l'enregistrement persistant du
+    //    bannissement échoue juste après (table "bans" absente, etc.).
+    try {
+      await db.entities.ServerMember.delete(target.id);
+    } catch (err) {
+      console.error("Ban command: expulsion failed", err);
+      setCommandNotice({ type: "error", text: "Échec du bannissement : impossible d'expulser ce membre." });
+      return;
+    }
+
+    // 2. On enregistre ensuite le bannissement pour empêcher un retour futur
+    //    via le lien d'invitation. Si ça échoue, le membre est quand même
+    //    expulsé — on prévient juste que le blocage du retour n'est pas
+    //    garanti tant que la table "bans" n'existe pas côté Supabase.
+    let persisted = true;
     try {
       await db.entities.Ban.create({
         server_id: channel.server_id,
@@ -201,17 +226,20 @@ export default function ChatArea({
         banned_by_name: currentUser.display_name || currentUser.username,
         expires_at: expiresAt
       });
-      await db.entities.ServerMember.delete(target.id);
-      setCommandNotice({
-        type: "success",
-        text: expiresAt
-          ? `${target.display_name || target.username} banni jusqu'au ${moment(expiresAt).format("DD MMM YYYY, HH:mm")}.`
-          : `${target.display_name || target.username} banni définitivement.`
-      });
     } catch (err) {
-      console.error("Ban command failed", err);
-      setCommandNotice({ type: "error", text: 'Échec du bannissement (la table "bans" existe-t-elle sur Supabase ?).' });
+      console.error("Ban command: persisting ban failed", err);
+      persisted = false;
     }
+
+    const name = target.display_name || target.username;
+    setCommandNotice({
+      type: persisted ? "success" : "error",
+      text: persisted
+        ? expiresAt
+          ? `${name} banni jusqu'au ${moment(expiresAt).format("DD MMM YYYY, HH:mm")}.`
+          : `${name} banni définitivement.`
+        : `${name} a été expulsé, mais son retour ne pourra pas être bloqué (table "bans" absente sur Supabase).`
+    });
   };
 
   const runUnban = async (usernameRaw) => {
@@ -392,6 +420,13 @@ export default function ChatArea({
 
   const title = isDM ? dmTitle() : channel?.name || "canal";
   const isGroupDM = isDM && (dmConversation?.participants?.length || 0) > 2;
+
+  // Aide façon Discord : visible tant qu'on est en train de taper le NOM de
+  // la commande (ex: "/", "/cl") mais pas encore ses arguments (ex: "/ban ").
+  const canSeeCommandHelp = !isDM && !!channel && (isOwner || canUseCommands);
+  const showCommandHelp = canSeeCommandHelp && !pendingFile && /^\/[a-zA-Zéèêà]*$/.test(input);
+  const typedCommandName = input.slice(1).toLowerCase();
+  const filteredCommands = AVAILABLE_COMMANDS.filter((c) => c.name.startsWith(typedCommandName));
 
   // -----------------------------------------------------------
   // VOICE CHANNEL — dédié, aucun chat texte ici
@@ -668,7 +703,27 @@ export default function ChatArea({
       </div>
 
       {/* Input */}
-      <div className="px-4 pb-4">
+      <div className="px-4 pb-4 relative">
+        {showCommandHelp && filteredCommands.length > 0 && (
+          <div className="absolute bottom-full left-0 mb-2 bg-[var(--bg-secondary)] border border-[var(--bg-tertiary)] rounded-lg shadow-xl p-2 w-80 max-w-[90vw] z-20">
+            <p className="text-[var(--text-muted)] text-[10px] uppercase font-semibold px-2 pb-1">
+              Commandes disponibles
+            </p>
+            <div className="space-y-0.5 max-h-60 overflow-y-auto">
+              {filteredCommands.map((cmd, i) => (
+                <button
+                  key={i}
+                  type="button"
+                  onClick={() => setInput(cmd.usage)}
+                  className="w-full flex flex-col items-start px-2 py-1.5 rounded hover:bg-[var(--bg-modifier-hover)] transition text-left"
+                >
+                  <span className="text-white text-sm font-mono">{cmd.usage}</span>
+                  <span className="text-[var(--text-muted)] text-xs">{cmd.description}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
         {commandNotice && (
           <div
             className={`flex items-center justify-between gap-2 rounded-lg px-3 py-2 mb-2 text-sm ${
@@ -768,4 +823,4 @@ export default function ChatArea({
       )}
     </div>
   );
-}
+}
