@@ -3,7 +3,7 @@ import { useVoiceChannel } from "../hooks/useVoiceChannel";
 import { db } from '@/lib/localDb';
 import { computePermissions } from "@/lib/permissions";
 
-import React, { useState, useEffect, useContext } from "react";
+import React, { useState, useEffect, useContext, useRef } from "react";
 
 import { ShiftAuthContext } from "@/lib/useShiftAuth";
 import { Plus, Settings, Home, LogOut, ChevronLeft } from "lucide-react";
@@ -46,23 +46,6 @@ function isChannelVisible(channel, { isOwner, userId, member }) {
   if (userRestricted && channel.allowed_user_ids.includes(userId)) return true;
   if (roleRestricted && (member?.role_ids || []).some((rid) => channel.allowed_role_ids.includes(rid))) return true;
   return false;
-}
-
-// Barre d'en-tête affichée uniquement sur mobile en haut d'un panneau, avec
-// un bouton retour vers l'écran précédent (façon navigation Discord mobile).
-function MobileBackHeader({ label, onBack }) {
-  return (
-    <div className="h-12 flex-shrink-0 border-b border-[var(--bg-tertiary)] flex items-center gap-2 px-2 bg-[var(--bg-secondary)]">
-      <button
-        onClick={onBack}
-        className="p-1.5 text-[var(--text-secondary)] hover:text-white transition rounded"
-        title="Retour"
-      >
-        <ChevronLeft className="w-5 h-5" />
-      </button>
-      <span className="text-white font-semibold text-sm truncate">{label}</span>
-    </div>
-  );
 }
 
 export default function ShiftApp() {
@@ -108,13 +91,43 @@ export default function ShiftApp() {
   const [showNewGroup, setShowNewGroup] = useState(false);
   const [profileUser, setProfileUser] = useState(null);
 
-  // --- Navigation mobile façon Discord : un seul panneau affiché à la fois
-  // ('servers' = rail serveurs + DM, 'channels' = liste des salons/DM,
-  // 'chat' = conversation, 'members' = liste des membres en overlay).
-  // Sur desktop (isMobile === false), tout reste affiché côte à côte comme
-  // avant — mobileScreen n'est alors simplement pas utilisé pour le rendu.
+  // --- Navigation mobile façon Discord (la vraie, à l'ancienne) : 3
+  // panneaux qu'on parcourt en swipe horizontal, comme un carrousel :
+  //   page 0 = rail des serveurs + liste des salons/DM
+  //   page 1 = conversation (salon, DM ou liste d'amis)
+  //   page 2 = liste des membres (pertinent uniquement dans un salon)
+  // Sur desktop (isMobile === false), rien de tout ça n'est monté : le
+  // layout desktop est rendu séparément, strictement inchangé.
   const isMobile = useIsMobile();
-  const [mobileScreen, setMobileScreen] = useState("servers");
+  const [mobilePage, setMobilePageState] = useState(0);
+  const mobilePageRef = useRef(0);
+  const mobileTrackRef = useRef(null);
+  const mobileWrapRef = useRef(null);
+  const selectedServerRef = useRef(null);
+
+  const MOBILE_MAX_PAGE = () => (selectedServerRef.current ? 2 : 1);
+
+  const setMobilePage = (updater) => {
+    setMobilePageState((prev) => {
+      const raw = typeof updater === "function" ? updater(prev) : updater;
+      const clamped = Math.max(0, Math.min(MOBILE_MAX_PAGE(), raw));
+      mobilePageRef.current = clamped;
+      return clamped;
+    });
+  };
+
+  // Anime la piste vers la page demandée (utilisé aussi bien par les boutons
+  // retour que par la fin d'un geste de swipe).
+  const goToMobilePage = (index) => {
+    setMobilePage(index);
+    const track = mobileTrackRef.current;
+    const wrap = mobileWrapRef.current;
+    if (track && wrap) {
+      const w = wrap.clientWidth || window.innerWidth;
+      track.style.transition = "transform 0.28s cubic-bezier(0.22,1,0.36,1)";
+      track.style.transform = `translateX(${-mobilePageRef.current * w}px)`;
+    }
+  };
 
   const [signalingUrl, setSignalingUrlState] = useState(
     () => localStorage.getItem("shift_signaling_url") || "wss://websocketshift.onrender.com"
@@ -244,7 +257,10 @@ export default function ShiftApp() {
     setSelectedDM(null);
     setSelectedDMUser(null);
     setShowFriends(false);
-    if (isMobile) setMobileScreen("channels");
+    // Pas de changement de page ici : sur mobile, la page 0 contient déjà
+    // le rail des serveurs ET la liste des salons côte à côte (comme sur
+    // desktop) — sélectionner un serveur ne fait que changer ce qui
+    // s'affiche à l'intérieur de cette même page.
   };
 
   const goHome = () => {
@@ -252,17 +268,16 @@ export default function ShiftApp() {
     setSelectedDM(null);
     setSelectedDMUser(null);
     setShowFriends(true);
-    if (isMobile) setMobileScreen("channels");
   };
 
   const selectChannel = (channel) => {
     setSelectedChannel(channel);
-    if (isMobile) setMobileScreen("chat");
+    if (isMobile) goToMobilePage(1);
   };
 
   const toggleMemberList = () => {
     if (isMobile) {
-      setMobileScreen((s) => (s === "members" ? "chat" : "members"));
+      goToMobilePage(mobilePageRef.current === 2 ? 1 : 2);
     } else {
       setShowMemberList((v) => !v);
     }
@@ -274,8 +289,101 @@ export default function ShiftApp() {
     setSelectedDMUser(otherUser);
     setShowFriends(false);
     cacheProfiles(conv?.participants || []);
-    if (isMobile) setMobileScreen("chat");
+    if (isMobile) goToMobilePage(1);
   };
+
+  // Garde une ref à jour de selectedServer (lisible depuis les listeners
+  // tactiles sans avoir à réattacher les listeners à chaque changement), et
+  // ramène la page courante à 1 (chat) si on quitte un salon alors qu'on
+  // était sur la page 2 (membres) qui n'a plus de sens sans serveur.
+  useEffect(() => {
+    selectedServerRef.current = selectedServer;
+    if (mobilePageRef.current > MOBILE_MAX_PAGE()) {
+      goToMobilePage(MOBILE_MAX_PAGE());
+    }
+  }, [selectedServer]);
+
+  // Swipe horizontal façon Discord mobile : on attache des listeners
+  // tactiles non-passifs (nécessaire pour pouvoir bloquer le scroll
+  // vertical pendant un swipe horizontal, ce que React ne permet pas de
+  // faire de façon fiable via les props onTouch* JSX). On ne les monte
+  // qu'une fois sur mobile, et on lit les valeurs qui changent (page
+  // courante, serveur sélectionné) via des refs plutôt que des deps
+  // d'effet, pour éviter de recréer les listeners à chaque frame de drag.
+  useEffect(() => {
+    if (!isMobile) return;
+    const wrap = mobileWrapRef.current;
+    const track = mobileTrackRef.current;
+    if (!wrap || !track) return;
+
+    const drag = { startX: 0, startY: 0, dragging: false, horizontal: null, baseX: 0 };
+
+    const onTouchStart = (e) => {
+      const t = e.touches[0];
+      track.style.transition = "none";
+      drag.startX = t.clientX;
+      drag.startY = t.clientY;
+      drag.dragging = true;
+      drag.horizontal = null;
+      drag.baseX = -mobilePageRef.current * wrap.clientWidth;
+    };
+
+    const onTouchMove = (e) => {
+      if (!drag.dragging) return;
+      const t = e.touches[0];
+      const dx = t.clientX - drag.startX;
+      const dy = t.clientY - drag.startY;
+      if (drag.horizontal === null && (Math.abs(dx) > 8 || Math.abs(dy) > 8)) {
+        drag.horizontal = Math.abs(dx) > Math.abs(dy);
+      }
+      if (!drag.horizontal) return; // scroll vertical normal : on laisse faire
+      e.preventDefault();
+      const maxPage = MOBILE_MAX_PAGE();
+      let d = dx;
+      // effet "élastique" quand on essaie de dépasser la première ou la
+      // dernière page, comme un vrai scroll iOS/Android.
+      if (mobilePageRef.current === 0 && d > 0) d = d / 3;
+      if (mobilePageRef.current === maxPage && d < 0) d = d / 3;
+      track.style.transform = `translateX(${drag.baseX + d}px)`;
+    };
+
+    const onTouchEnd = (e) => {
+      if (drag.dragging && drag.horizontal) {
+        const t = e.changedTouches[0];
+        const dx = t.clientX - drag.startX;
+        const threshold = Math.min(120, wrap.clientWidth * 0.22);
+        const maxPage = MOBILE_MAX_PAGE();
+        let next = mobilePageRef.current;
+        if (dx < -threshold) next = Math.min(maxPage, mobilePageRef.current + 1);
+        else if (dx > threshold) next = Math.max(0, mobilePageRef.current - 1);
+        goToMobilePage(next);
+      } else {
+        goToMobilePage(mobilePageRef.current);
+      }
+      drag.dragging = false;
+      drag.horizontal = null;
+    };
+
+    wrap.addEventListener("touchstart", onTouchStart, { passive: true });
+    wrap.addEventListener("touchmove", onTouchMove, { passive: false });
+    wrap.addEventListener("touchend", onTouchEnd, { passive: true });
+    wrap.addEventListener("touchcancel", onTouchEnd, { passive: true });
+    return () => {
+      wrap.removeEventListener("touchstart", onTouchStart);
+      wrap.removeEventListener("touchmove", onTouchMove);
+      wrap.removeEventListener("touchend", onTouchEnd);
+      wrap.removeEventListener("touchcancel", onTouchEnd);
+    };
+  }, [isMobile]);
+
+  // Re-cale la piste correctement si l'écran change de taille (rotation,
+  // clavier virtuel qui redimensionne le viewport, etc).
+  useEffect(() => {
+    if (!isMobile) return;
+    const onResize = () => goToMobilePage(mobilePageRef.current);
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+  }, [isMobile]);
 
   const handleOpenDM = async (profile) => {
     if (!profile?.user_id) return;
@@ -410,261 +518,423 @@ export default function ShiftApp() {
       <div className="relative z-10 flex w-full h-full">
       <CallBar call={call} />
 
-      {/* Server rail */}
-      <div
-        className={
-          isMobile
-            ? mobileScreen === "servers"
-              ? "w-full bg-[var(--bg-tertiary)] flex-shrink-0 flex flex-col items-center py-3 pb-20 gap-2 overflow-y-auto"
-              : "hidden"
-            : "w-[72px] bg-[var(--bg-tertiary)] flex-shrink-0 flex flex-col items-center py-3 gap-2 overflow-y-auto"
-        }
-      >
-        <button
-          onClick={goHome}
-          title="Accueil"
-          className={`w-12 h-12 flex items-center justify-center transition-all ${
-            !selectedServer ? "rounded-2xl bg-[#5865f2] text-white" : "rounded-3xl bg-[var(--bg-primary)] text-[var(--text-normal)] hover:bg-[#5865f2] hover:rounded-2xl hover:text-white"
-          }`}
-        >
-          <Home className="w-6 h-6" />
-        </button>
+      {isMobile ? (
+        <div ref={mobileWrapRef} className="relative w-full h-full overflow-hidden">
+          {/* Piste à 3 panneaux (300% de large), déplacée au doigt en swipe
+              horizontal — exactement le comportement historique de Discord
+              mobile : rail serveurs+salons, conversation, membres. */}
+          <div
+            ref={mobileTrackRef}
+            className="flex h-full"
+            style={{ width: "300%", transform: "translateX(0px)" }}
+          >
+            {/* Page 0 : rail des serveurs + liste des salons/DM */}
+            <div className="h-full flex-shrink-0 flex overflow-hidden" style={{ width: `${100 / 3}%` }}>
+              <div className="w-[72px] bg-[var(--bg-tertiary)] flex-shrink-0 flex flex-col items-center py-3 pb-20 gap-2 overflow-y-auto">
+                <button
+                  onClick={goHome}
+                  title="Accueil"
+                  className={`w-12 h-12 flex items-center justify-center transition-all ${
+                    !selectedServer ? "rounded-2xl bg-[#5865f2] text-white" : "rounded-3xl bg-[var(--bg-primary)] text-[var(--text-normal)] hover:bg-[#5865f2] hover:rounded-2xl hover:text-white"
+                  }`}
+                >
+                  <Home className="w-6 h-6" />
+                </button>
 
-        <div className="w-8 h-[2px] bg-[var(--bg-modifier-hover)] rounded-full" />
+                <div className="w-8 h-[2px] bg-[var(--bg-modifier-hover)] rounded-full" />
 
-        {servers.map((server) => (
-          <button
-            key={server.id}
-            onClick={() => selectServer(server)}
-            title={server.name}
-            className={`w-12 h-12 flex items-center justify-center font-bold text-white transition-all overflow-hidden ${
-              selectedServer?.id === server.id
-                ? "rounded-2xl bg-[#5865f2]"
-                : "rounded-3xl bg-[var(--bg-primary)] hover:bg-[#5865f2] hover:rounded-2xl"
+                {servers.map((server) => (
+                  <button
+                    key={server.id}
+                    onClick={() => selectServer(server)}
+                    title={server.name}
+                    className={`w-12 h-12 flex items-center justify-center font-bold text-white transition-all overflow-hidden ${
+                      selectedServer?.id === server.id
+                        ? "rounded-2xl bg-[#5865f2]"
+                        : "rounded-3xl bg-[var(--bg-primary)] hover:bg-[#5865f2] hover:rounded-2xl"
+                    }`}
+                  >
+                    {server.icon ? (
+                      <img src={server.icon} alt={server.name} className="w-full h-full object-cover" />
+                    ) : (
+                      server.name?.charAt(0).toUpperCase()
+                    )}
+                  </button>
+                ))}
+
+                <button
+                  onClick={() => setShowJoinModal(true)}
+                  title="Ajouter un serveur"
+                  className="w-12 h-12 rounded-3xl bg-[var(--bg-primary)] hover:bg-[#23a559] hover:rounded-2xl text-[#23a559] hover:text-white flex items-center justify-center transition-all"
+                >
+                  <Plus className="w-6 h-6" />
+                </button>
+              </div>
+
+              {selectedServer ? (
+                <ServerSidebar
+                  server={selectedServer}
+                  channels={visibleChannels}
+                  categories={categories}
+                  selectedChannel={selectedChannel}
+                  onSelectChannel={selectChannel}
+                  currentUser={user}
+                  members={liveMembers}
+                  roles={roles}
+                  isMemberOwner={isMemberOwner}
+                  permissions={myPermissions}
+                  onOpenSettings={() => setShowServerSettings(true)}
+                  onCreateChannel={handleCreateChannel}
+                  onRenameChannel={handleRenameChannel}
+                  onDeleteChannel={handleDeleteChannel}
+                  onMoveChannelCategory={handleMoveChannelCategory}
+                  onUpdateChannelAccess={handleUpdateChannelAccess}
+                  joinVoice={(channelId) => {
+                    if (call.callState !== "idle") call.endCall();
+                    joinVoice(channelId);
+                  }}
+                  leaveVoice={leaveVoice}
+                  voiceMembers={voiceMembers}
+                  currentVoiceChannel={currentVoiceChannel}
+                  voiceConnected={voiceConnected}
+                />
+              ) : (
+                <div className="flex-1 bg-[var(--bg-secondary)] flex flex-col overflow-hidden">
+                  <div className="h-12 border-b border-[var(--bg-tertiary)] flex items-center justify-between px-4 flex-shrink-0">
+                    <span className="text-white font-bold text-sm">Messages directs</span>
+                    <button
+                      onClick={() => setShowNewGroup(true)}
+                      title="Nouveau groupe"
+                      className="text-[var(--text-secondary)] hover:text-white transition"
+                    >
+                      <Plus className="w-4 h-4" />
+                    </button>
+                  </div>
+                  <DMSidebar
+                    currentUser={user}
+                    selectedDM={selectedDM}
+                    onSelectDM={handleSelectDM}
+                    onSelectFriends={() => {
+                      setShowFriends(true);
+                      setSelectedDM(null);
+                      setSelectedDMUser(null);
+                      goToMobilePage(1);
+                    }}
+                    liveProfiles={liveProfiles}
+                  />
+                </div>
+              )}
+            </div>
+
+            {/* Page 1 : conversation (salon de serveur, DM, ou liste d'amis) */}
+            <div className="h-full flex-shrink-0 flex flex-col overflow-hidden" style={{ width: `${100 / 3}%` }}>
+              <div className="h-12 flex-shrink-0 border-b border-[var(--bg-tertiary)] flex items-center gap-2 px-2 bg-[var(--bg-secondary)]">
+                <button
+                  onClick={() => goToMobilePage(0)}
+                  className="p-1.5 text-[var(--text-secondary)] hover:text-white transition rounded"
+                  title="Retour"
+                >
+                  <ChevronLeft className="w-5 h-5" />
+                </button>
+                <span className="text-white font-semibold text-sm truncate">
+                  {selectedServer
+                    ? selectedChannel
+                      ? `# ${selectedChannel.name}`
+                      : selectedServer.name
+                    : showFriends
+                    ? "Amis"
+                    : selectedDMUser?.display_name || selectedDMUser?.username || "Messages"}
+                </span>
+              </div>
+              <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
+                {selectedServer ? (
+                  <ChatArea
+                    channel={selectedChannel}
+                    currentUser={user}
+                    isDM={false}
+                    serverRoles={roles}
+                    serverMembers={liveMembers}
+                    liveProfiles={liveProfiles}
+                    showMemberList={mobilePage === 2}
+                    onToggleMemberList={toggleMemberList}
+                    onSecretCode={unlockSignalingField}
+                    voiceMembers={voiceMembers}
+                    currentVoiceChannel={currentVoiceChannel}
+                    joinVoice={(channelId) => {
+                      if (call.callState !== "idle") call.endCall();
+                      joinVoice(channelId);
+                    }}
+                    leaveVoice={leaveVoice}
+                    muted={voiceMuted}
+                    mutedMembers={voiceMutedMembers}
+                    toggleMute={toggleVoiceMute}
+                    onOpenDM={handleOpenDM}
+                    onAddFriend={handleAddFriend}
+                  />
+                ) : showFriends ? (
+                  <FriendsPanel currentUser={user} onOpenDM={handleOpenDM} onAddFriend={handleAddFriend} liveProfiles={liveProfiles} />
+                ) : (
+                  <ChatArea
+                    dmConversation={selectedDM}
+                    currentUser={user}
+                    isDM={true}
+                    onStartCall={
+                      selectedDM && (selectedDM.participants?.length || 0) === 2
+                        ? () => call.startCall(selectedDM.participants.find((p) => p !== user.id))
+                        : null
+                    }
+                    callState={call.callState}
+                    onSecretCode={unlockSignalingField}
+                    onOpenDM={handleOpenDM}
+                    onAddFriend={handleAddFriend}
+                    liveProfiles={liveProfiles}
+                  />
+                )}
+              </div>
+            </div>
+
+            {/* Page 2 : membres du salon (pertinent uniquement dans un salon de serveur) */}
+            <div className="h-full flex-shrink-0 flex flex-col overflow-hidden" style={{ width: `${100 / 3}%` }}>
+              <div className="h-12 flex-shrink-0 border-b border-[var(--bg-tertiary)] flex items-center gap-2 px-2 bg-[var(--bg-secondary)]">
+                <button
+                  onClick={() => goToMobilePage(1)}
+                  className="p-1.5 text-[var(--text-secondary)] hover:text-white transition rounded"
+                  title="Retour"
+                >
+                  <ChevronLeft className="w-5 h-5" />
+                </button>
+                <span className="text-white font-semibold text-sm truncate">Membres</span>
+              </div>
+              {selectedServer && (
+                <MemberList
+                  members={liveMembers}
+                  roles={roles}
+                  currentUser={user}
+                  onOpenDM={handleOpenDM}
+                  onAddFriend={handleAddFriend}
+                  liveProfiles={liveProfiles}
+                  canKickMembers={myPermissions.canKickMembers}
+                  onKickMember={handleKickMember}
+                  serverOwnerId={selectedServer?.owner_id}
+                  mobileFull
+                />
+              )}
+            </div>
+          </div>
+
+          {/* Barre utilisateur, uniquement visible sur la page 0 (rail serveurs) */}
+          <div
+            className={`fixed bottom-0 left-0 w-full flex items-center gap-2 bg-[var(--bg-floating)] px-3 py-2 z-20 transition-opacity duration-150 ${
+              mobilePage === 0 ? "opacity-100" : "opacity-0 pointer-events-none"
             }`}
           >
-            {server.icon ? (
-              <img src={server.icon} alt={server.name} className="w-full h-full object-cover" />
-            ) : (
-              server.name?.charAt(0).toUpperCase()
-            )}
-          </button>
-        ))}
-
-        <button
-          onClick={() => setShowJoinModal(true)}
-          title="Ajouter un serveur"
-          className="w-12 h-12 rounded-3xl bg-[var(--bg-primary)] hover:bg-[#23a559] hover:rounded-2xl text-[#23a559] hover:text-white flex items-center justify-center transition-all"
-        >
-          <Plus className="w-6 h-6" />
-        </button>
-      </div>
-
-      {/* Secondary sidebar: DM list or server channels */}
-      <div
-        className={
-          isMobile
-            ? mobileScreen === "channels"
-              ? "w-full h-full flex flex-col overflow-hidden"
-              : "hidden"
-            : "contents"
-        }
-      >
-        {isMobile && (
-          <MobileBackHeader
-            label={selectedServer ? selectedServer.name : "Messages directs"}
-            onBack={() => {
-              setMobileScreen("servers");
-            }}
-          />
-        )}
-        {selectedServer ? (
-          <ServerSidebar
-            server={selectedServer}
-            channels={visibleChannels}
-            categories={categories}
-            selectedChannel={selectedChannel}
-            onSelectChannel={selectChannel}
-            currentUser={user}
-            members={liveMembers}
-            roles={roles}
-            isMemberOwner={isMemberOwner}
-            permissions={myPermissions}
-            onOpenSettings={() => setShowServerSettings(true)}
-            onCreateChannel={handleCreateChannel}
-            onRenameChannel={handleRenameChannel}
-            onDeleteChannel={handleDeleteChannel}
-            onMoveChannelCategory={handleMoveChannelCategory}
-            onUpdateChannelAccess={handleUpdateChannelAccess}
-            joinVoice={(channelId) => {
-              if (call.callState !== "idle") call.endCall();
-              joinVoice(channelId);
-            }}
-            leaveVoice={leaveVoice}
-            voiceMembers={voiceMembers}
-            currentVoiceChannel={currentVoiceChannel}
-            voiceConnected={voiceConnected}
-            mobileFull={isMobile}
-          />
-        ) : (
-          <div className={isMobile ? "flex-1 bg-[var(--bg-secondary)] flex flex-col overflow-hidden" : "w-60 bg-[var(--bg-secondary)] flex-shrink-0 flex flex-col"}>
-            <div className="h-12 border-b border-[var(--bg-tertiary)] flex items-center justify-between px-4 flex-shrink-0">
-              <span className="text-white font-bold text-sm">Messages directs</span>
-              <button
-                onClick={() => setShowNewGroup(true)}
-                title="Nouveau groupe"
-                className="text-[var(--text-secondary)] hover:text-white transition"
-              >
-                <Plus className="w-4 h-4" />
-              </button>
+            <UserAvatar user={user} size={32} showStatus />
+            <div className="flex-1 min-w-0">
+              <p className="text-white text-xs font-semibold truncate">{user?.display_name || user?.username}</p>
+              <p className="text-[var(--text-secondary)] text-[10px] truncate">
+                {user?.custom_status || OWN_STATUS_LABELS[user?.status || "online"]}
+              </p>
             </div>
-            <DMSidebar
-              currentUser={user}
-              selectedDM={selectedDM}
-              onSelectDM={handleSelectDM}
-              onSelectFriends={() => {
-                setShowFriends(true);
-                setSelectedDM(null);
-                setSelectedDMUser(null);
-                if (isMobile) setMobileScreen("chat");
-              }}
-              liveProfiles={liveProfiles}
-          />
+            <button
+              onClick={() => setShowSettings(true)}
+              title="Paramètres utilisateur"
+              className="text-[var(--text-secondary)] hover:text-white transition p-1.5"
+            >
+              <Settings className="w-4 h-4" />
+            </button>
+            <button
+              onClick={logout}
+              title="Se déconnecter"
+              className="text-[var(--text-secondary)] hover:text-[#ed4245] transition p-1.5"
+            >
+              <LogOut className="w-4 h-4" />
+            </button>
+          </div>
         </div>
-      )}
-      </div>
-
-      {/* Main content */}
-      {selectedServer ? (
+      ) : (
         <>
-          <div
-            className={
-              isMobile
-                ? mobileScreen === "chat"
-                  ? "flex-1 flex flex-col min-w-0 h-full overflow-hidden"
-                  : "hidden"
-                : "contents"
-            }
-          >
-            {isMobile && (
-              <MobileBackHeader
-                label={selectedChannel ? `# ${selectedChannel.name}` : "Salon"}
-                onBack={() => setMobileScreen("channels")}
-              />
-            )}
-            <ChatArea
-              channel={selectedChannel}
+          {/* Server rail */}
+          <div className="w-[72px] bg-[var(--bg-tertiary)] flex-shrink-0 flex flex-col items-center py-3 gap-2 overflow-y-auto">
+            <button
+              onClick={goHome}
+              title="Accueil"
+              className={`w-12 h-12 flex items-center justify-center transition-all ${
+                !selectedServer ? "rounded-2xl bg-[#5865f2] text-white" : "rounded-3xl bg-[var(--bg-primary)] text-[var(--text-normal)] hover:bg-[#5865f2] hover:rounded-2xl hover:text-white"
+              }`}
+            >
+              <Home className="w-6 h-6" />
+            </button>
+
+            <div className="w-8 h-[2px] bg-[var(--bg-modifier-hover)] rounded-full" />
+
+            {servers.map((server) => (
+              <button
+                key={server.id}
+                onClick={() => selectServer(server)}
+                title={server.name}
+                className={`w-12 h-12 flex items-center justify-center font-bold text-white transition-all overflow-hidden ${
+                  selectedServer?.id === server.id
+                    ? "rounded-2xl bg-[#5865f2]"
+                    : "rounded-3xl bg-[var(--bg-primary)] hover:bg-[#5865f2] hover:rounded-2xl"
+                }`}
+              >
+                {server.icon ? (
+                  <img src={server.icon} alt={server.name} className="w-full h-full object-cover" />
+                ) : (
+                  server.name?.charAt(0).toUpperCase()
+                )}
+              </button>
+            ))}
+
+            <button
+              onClick={() => setShowJoinModal(true)}
+              title="Ajouter un serveur"
+              className="w-12 h-12 rounded-3xl bg-[var(--bg-primary)] hover:bg-[#23a559] hover:rounded-2xl text-[#23a559] hover:text-white flex items-center justify-center transition-all"
+            >
+              <Plus className="w-6 h-6" />
+            </button>
+          </div>
+
+          {/* Secondary sidebar: DM list or server channels */}
+          {selectedServer ? (
+            <ServerSidebar
+              server={selectedServer}
+              channels={visibleChannels}
+              categories={categories}
+              selectedChannel={selectedChannel}
+              onSelectChannel={selectChannel}
               currentUser={user}
-              isDM={false}
-              serverRoles={roles}
-              serverMembers={liveMembers}
-              liveProfiles={liveProfiles}
-              showMemberList={showMemberList}
-              onToggleMemberList={toggleMemberList}
-              onSecretCode={unlockSignalingField}
-              voiceMembers={voiceMembers}
-              currentVoiceChannel={currentVoiceChannel}
+              members={liveMembers}
+              roles={roles}
+              isMemberOwner={isMemberOwner}
+              permissions={myPermissions}
+              onOpenSettings={() => setShowServerSettings(true)}
+              onCreateChannel={handleCreateChannel}
+              onRenameChannel={handleRenameChannel}
+              onDeleteChannel={handleDeleteChannel}
+              onMoveChannelCategory={handleMoveChannelCategory}
+              onUpdateChannelAccess={handleUpdateChannelAccess}
               joinVoice={(channelId) => {
                 if (call.callState !== "idle") call.endCall();
                 joinVoice(channelId);
               }}
               leaveVoice={leaveVoice}
-              muted={voiceMuted}
-              mutedMembers={voiceMutedMembers}
-              toggleMute={toggleVoiceMute}
-              onOpenDM={handleOpenDM}
-              onAddFriend={handleAddFriend}
+              voiceMembers={voiceMembers}
+              currentVoiceChannel={currentVoiceChannel}
+              voiceConnected={voiceConnected}
             />
-          </div>
-          {(isMobile ? mobileScreen === "members" : showMemberList) && (
-            <div className={isMobile ? "flex-1 flex flex-col h-full overflow-hidden" : "contents"}>
-              {isMobile && <MobileBackHeader label="Membres" onBack={() => setMobileScreen("chat")} />}
-              <MemberList
-                members={liveMembers}
-                roles={roles}
+          ) : (
+            <div className="w-60 bg-[var(--bg-secondary)] flex-shrink-0 flex flex-col">
+              <div className="h-12 border-b border-[var(--bg-tertiary)] flex items-center justify-between px-4">
+                <span className="text-white font-bold text-sm">Messages directs</span>
+                <button
+                  onClick={() => setShowNewGroup(true)}
+                  title="Nouveau groupe"
+                  className="text-[var(--text-secondary)] hover:text-white transition"
+                >
+                  <Plus className="w-4 h-4" />
+                </button>
+              </div>
+              <DMSidebar
                 currentUser={user}
-                onOpenDM={handleOpenDM}
-                onAddFriend={handleAddFriend}
+                selectedDM={selectedDM}
+                onSelectDM={handleSelectDM}
+                onSelectFriends={() => {
+                  setShowFriends(true);
+                  setSelectedDM(null);
+                  setSelectedDMUser(null);
+                }}
                 liveProfiles={liveProfiles}
-                canKickMembers={myPermissions.canKickMembers}
-                onKickMember={handleKickMember}
-                serverOwnerId={selectedServer?.owner_id}
-                mobileFull={isMobile}
               />
             </div>
           )}
-        </>
-      ) : showFriends ? (
-        <div
-          className={
-            isMobile ? (mobileScreen === "chat" ? "flex-1 flex flex-col h-full overflow-hidden" : "hidden") : "contents"
-          }
-        >
-          {isMobile && <MobileBackHeader label="Amis" onBack={() => setMobileScreen("channels")} />}
-          <FriendsPanel currentUser={user} onOpenDM={handleOpenDM} onAddFriend={handleAddFriend} liveProfiles={liveProfiles} />
-        </div>
-      ) : (
-        <div
-          className={
-            isMobile ? (mobileScreen === "chat" ? "flex-1 flex flex-col h-full overflow-hidden" : "hidden") : "contents"
-          }
-        >
-          {isMobile && (
-            <MobileBackHeader
-              label={selectedDMUser?.display_name || selectedDMUser?.username || "Message"}
-              onBack={() => setMobileScreen("channels")}
+
+          {/* Main content */}
+          {selectedServer ? (
+            <>
+              <ChatArea
+                channel={selectedChannel}
+                currentUser={user}
+                isDM={false}
+                serverRoles={roles}
+                serverMembers={liveMembers}
+                liveProfiles={liveProfiles}
+                showMemberList={showMemberList}
+                onToggleMemberList={toggleMemberList}
+                onSecretCode={unlockSignalingField}
+                voiceMembers={voiceMembers}
+                currentVoiceChannel={currentVoiceChannel}
+                joinVoice={(channelId) => {
+                  if (call.callState !== "idle") call.endCall();
+                  joinVoice(channelId);
+                }}
+                leaveVoice={leaveVoice}
+                muted={voiceMuted}
+                mutedMembers={voiceMutedMembers}
+                toggleMute={toggleVoiceMute}
+                onOpenDM={handleOpenDM}
+                onAddFriend={handleAddFriend}
+              />
+              {showMemberList && (
+                <MemberList
+                  members={liveMembers}
+                  roles={roles}
+                  currentUser={user}
+                  onOpenDM={handleOpenDM}
+                  onAddFriend={handleAddFriend}
+                  liveProfiles={liveProfiles}
+                  canKickMembers={myPermissions.canKickMembers}
+                  onKickMember={handleKickMember}
+                  serverOwnerId={selectedServer?.owner_id}
+                />
+              )}
+            </>
+          ) : showFriends ? (
+            <FriendsPanel currentUser={user} onOpenDM={handleOpenDM} onAddFriend={handleAddFriend} liveProfiles={liveProfiles} />
+          ) : (
+            <ChatArea
+              dmConversation={selectedDM}
+              currentUser={user}
+              isDM={true}
+              onStartCall={
+                selectedDM && (selectedDM.participants?.length || 0) === 2
+                  ? () => call.startCall(selectedDM.participants.find((p) => p !== user.id))
+                  : null
+              }
+              callState={call.callState}
+              onSecretCode={unlockSignalingField}
+              onOpenDM={handleOpenDM}
+              onAddFriend={handleAddFriend}
+              liveProfiles={liveProfiles}
             />
           )}
-          <ChatArea
-            dmConversation={selectedDM}
-            currentUser={user}
-            isDM={true}
-            onStartCall={
-              selectedDM && (selectedDM.participants?.length || 0) === 2
-                ? () => call.startCall(selectedDM.participants.find((p) => p !== user.id))
-                : null
-            }
-            callState={call.callState}
-            onSecretCode={unlockSignalingField}
-            onOpenDM={handleOpenDM}
-            onAddFriend={handleAddFriend}
-            liveProfiles={liveProfiles}
-          />
-        </div>
-      )}
 
-      {/* Bottom-left user bar */}
-      <div
-        className={
-          isMobile
-            ? mobileScreen === "servers"
-              ? "fixed bottom-0 left-0 w-full flex items-center gap-2 bg-[var(--bg-floating)] px-3 py-2 z-20"
-              : "hidden"
-            : "fixed bottom-0 left-0 w-[calc(72px+15rem)] max-w-[312px] flex items-center gap-2 bg-[var(--bg-floating)] px-2 py-2"
-        }
-      >
-        <UserAvatar user={user} size={32} showStatus />
-        <div className="flex-1 min-w-0">
-          <p className="text-white text-xs font-semibold truncate">{user?.display_name || user?.username}</p>
-          <p className="text-[var(--text-secondary)] text-[10px] truncate">
-            {user?.custom_status || OWN_STATUS_LABELS[user?.status || "online"]}
-          </p>
-        </div>
-        <button
-          onClick={() => setShowSettings(true)}
-          title="Paramètres utilisateur"
-          className="text-[var(--text-secondary)] hover:text-white transition p-1.5"
-        >
-          <Settings className="w-4 h-4" />
-        </button>
-        <button
-          onClick={logout}
-          title="Se déconnecter"
-          className="text-[var(--text-secondary)] hover:text-[#ed4245] transition p-1.5"
-        >
-          <LogOut className="w-4 h-4" />
-        </button>
-      </div>
+          {/* Bottom-left user bar */}
+          <div className="fixed bottom-0 left-0 w-[calc(72px+15rem)] max-w-[312px] flex items-center gap-2 bg-[var(--bg-floating)] px-2 py-2">
+            <UserAvatar user={user} size={32} showStatus />
+            <div className="flex-1 min-w-0">
+              <p className="text-white text-xs font-semibold truncate">{user?.display_name || user?.username}</p>
+              <p className="text-[var(--text-secondary)] text-[10px] truncate">
+                {user?.custom_status || OWN_STATUS_LABELS[user?.status || "online"]}
+              </p>
+            </div>
+            <button
+              onClick={() => setShowSettings(true)}
+              title="Paramètres utilisateur"
+              className="text-[var(--text-secondary)] hover:text-white transition p-1.5"
+            >
+              <Settings className="w-4 h-4" />
+            </button>
+            <button
+              onClick={logout}
+              title="Se déconnecter"
+              className="text-[var(--text-secondary)] hover:text-[#ed4245] transition p-1.5"
+            >
+              <LogOut className="w-4 h-4" />
+            </button>
+          </div>
+        </>
+      )}
 
       {showRoles && selectedServer && (
         <RolesModal
