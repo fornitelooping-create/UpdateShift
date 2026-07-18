@@ -215,19 +215,38 @@ export default function ShiftApp() {
   // serveur ou de recharger la page.
   useEffect(() => {
     const unsubscribe = db.entities.ServerMember.subscribe(({ type, data }) => {
+      if (type === "delete") {
+        // Sur Supabase, un événement DELETE ne renvoie souvent QUE l'id de
+        // la ligne supprimée (server_id / user_id absents), sauf si la
+        // table a REPLICA IDENTITY FULL. On ne peut donc pas filtrer sur
+        // data.server_id ici comme pour create/update : on regarde plutôt
+        // si cet id fait partie de la liste des membres actuellement
+        // affichée (déjà propre au serveur sélectionné).
+        let evictedMe = false;
+        setMembers((prev) => {
+          const removed = prev.find((m) => m.id === data.id);
+          if (removed && (removed.user_id || removed.id) === user?.id) {
+            evictedMe = true;
+          }
+          return prev.filter((m) => m.id !== data.id);
+        });
+        if (evictedMe && selectedServer) {
+          const kickedServerId = selectedServer.id;
+          setServers((prev) => prev.filter((s) => s.id !== kickedServerId));
+          setSelectedServer((prev) => (prev && prev.id === kickedServerId ? null : prev));
+          setSelectedChannel(null);
+          // On était peut-être en vocal dans ce serveur : on s'en déconnecte
+          // immédiatement pour ne pas continuer à entendre/parler alors
+          // qu'on vient d'être expulsé.
+          leaveVoice();
+        }
+        return;
+      }
+
       if (!selectedServer || data.server_id !== selectedServer.id) return;
       if (type === "create") {
         setMembers((prev) => (prev.some((m) => m.id === data.id) ? prev : [...prev, data]));
         cacheProfiles([data.user_id || data.id]);
-      } else if (type === "delete") {
-        setMembers((prev) => prev.filter((m) => m.id !== data.id));
-        // Si c'est moi qu'on vient d'expulser (ou que j'ai quitté depuis un
-        // autre onglet), on ne doit pas rester coincé sur un serveur dont
-        // je ne fais plus partie.
-        if ((data.user_id || data.id) === user?.id) {
-          setServers((prev) => prev.filter((s) => s.id !== data.server_id));
-          setSelectedServer((prev) => (prev && prev.id === data.server_id ? null : prev));
-        }
       } else if (type === "update") {
         setMembers((prev) => prev.map((m) => (m.id === data.id ? { ...m, ...data } : m)));
       }
