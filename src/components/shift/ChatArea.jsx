@@ -205,7 +205,14 @@ export default function ChatArea({
     //    TOUJOURS avoir lieu, même si l'enregistrement persistant du
     //    bannissement échoue juste après (table "bans" absente, etc.).
     try {
-      await db.entities.ServerMember.delete(target.id);
+      const deleted = await db.entities.ServerMember.delete(target.id);
+      if (!deleted) {
+        setCommandNotice({
+          type: "error",
+          text: "La base de données a refusé l'expulsion (policy RLS sur \"server_members\" dans Supabase). Le membre n'a PAS été banni."
+        });
+        return;
+      }
     } catch (err) {
       console.error("Ban command: expulsion failed", err);
       setCommandNotice({ type: "error", text: "Échec du bannissement : impossible d'expulser ce membre." });

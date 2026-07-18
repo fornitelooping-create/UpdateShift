@@ -543,7 +543,12 @@ export default function ShiftApp() {
 
   const handleKickMember = async (memberUserId) => {
     const target = members.find((m) => (m.user_id || m.id) === memberUserId);
-    if (target) await db.entities.ServerMember.delete(target.id);
+    if (!target) return;
+    const deleted = await db.entities.ServerMember.delete(target.id);
+    if (!deleted) {
+      alert('L\'expulsion a été refusée par la base de données (policy RLS sur "server_members" dans Supabase). Le membre est toujours présent.');
+      return;
+    }
     loadServerData(selectedServer.id);
   };
 
@@ -1102,4 +1107,4 @@ export default function ShiftApp() {
       </div>
     </div>
   );
-}
+}
