@@ -117,6 +117,28 @@
   }
 }
 
+/* ============================================================
+   Empêche de "surligner" (sélectionner au clic-glissé) tout ce qui
+   est de l'interface (boutons, listes de membres/salons, en-têtes,
+   labels, placeholders, etc.) — comme dans Discord. On réautorise
+   explicitement la sélection là où c'est utile : les champs de
+   saisie (input/textarea), le contenu éditable, et tout élément
+   marqué .selectable-text (ex : le texte des messages, pour
+   pouvoir les copier).
+   ============================================================ */
+body {
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+input,
+textarea,
+[contenteditable="true"],
+.selectable-text {
+  -webkit-user-select: text;
+  user-select: text;
+}
+
 /* Barre de défilement personnalisée pour la zone de chat */
 .chat-scrollbar {
   scrollbar-width: thin;

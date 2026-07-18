@@ -394,7 +394,7 @@ export default function ChatArea({
                 ) : (
                   <>
                     {msg.content && (
-                      <p className="text-[var(--text-normal)] text-sm whitespace-pre-wrap break-words">{msg.content}</p>
+                      <p className="selectable-text text-[var(--text-normal)] text-sm whitespace-pre-wrap break-words">{msg.content}</p>
                     )}
                     {msg.file_url && (isImage || isVideo) && (
                       <button

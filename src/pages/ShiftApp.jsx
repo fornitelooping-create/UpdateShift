@@ -209,6 +209,32 @@ export default function ShiftApp() {
   // subscribe() on "user_profiles" here, Supabase Realtime only allows one
   // per channel and a second one throws.
 
+  // Keep the member list in sync in realtime: quand quelqu'un rejoint le
+  // serveur ou se fait expulser (ou quitte), tout le monde voit la liste
+  // se mettre à jour tout de suite, sans avoir besoin de recliquer sur le
+  // serveur ou de recharger la page.
+  useEffect(() => {
+    const unsubscribe = db.entities.ServerMember.subscribe(({ type, data }) => {
+      if (!selectedServer || data.server_id !== selectedServer.id) return;
+      if (type === "create") {
+        setMembers((prev) => (prev.some((m) => m.id === data.id) ? prev : [...prev, data]));
+        cacheProfiles([data.user_id || data.id]);
+      } else if (type === "delete") {
+        setMembers((prev) => prev.filter((m) => m.id !== data.id));
+        // Si c'est moi qu'on vient d'expulser (ou que j'ai quitté depuis un
+        // autre onglet), on ne doit pas rester coincé sur un serveur dont
+        // je ne fais plus partie.
+        if ((data.user_id || data.id) === user?.id) {
+          setServers((prev) => prev.filter((s) => s.id !== data.server_id));
+          setSelectedServer((prev) => (prev && prev.id === data.server_id ? null : prev));
+        }
+      } else if (type === "update") {
+        setMembers((prev) => prev.map((m) => (m.id === data.id ? { ...m, ...data } : m)));
+      }
+    });
+    return unsubscribe;
+  }, [selectedServer]);
+
   useEffect(() => {
     if (selectedServer) {
       loadServerData(selectedServer.id);
