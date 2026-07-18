@@ -285,9 +285,18 @@ export function useVoiceCall(user, signalingUrl) {
       }
 
       if (msg.type === "user-offline") {
-        setConnectionError("Cette personne n'est pas connectée au serveur d'appel en ce moment.");
-        recordCallHistory("failed");
-        cleanupCall();
+        // Ne réagir que si on est réellement en train d'appeler quelqu'un :
+        // sans cette vérification, n'importe quel message "user-offline"
+        // reçu du serveur (tardif, dupliqué, ou envoyé hors contexte)
+        // déclenchait le popup même au repos, et pouvait sembler apparaître
+        // "en boucle" si le serveur le renvoyait plusieurs fois.
+        if (callStateRef.current === "calling") {
+          setConnectionError("Cette personne n'est pas connectée au serveur d'appel en ce moment.");
+          recordCallHistory("failed");
+          cleanupCall();
+        } else {
+          console.warn("[useVoiceCall] message 'user-offline' ignoré (aucun appel sortant en cours)", msg);
+        }
       }
       };
     };
