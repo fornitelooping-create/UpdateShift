@@ -29,6 +29,18 @@ export default function JoinServerModal({ currentUser, onClose, onJoined, onCrea
       setLoading(false);
       return;
     }
+    // Check if banned (bannissement permanent ou temporaire toujours actif)
+    const bans = await db.entities.Ban.filter({ server_id: server.id, user_id: currentUser.id });
+    const activeBan = bans.find((b) => !b.expires_at || new Date(b.expires_at) > new Date());
+    if (activeBan) {
+      setError(
+        activeBan.expires_at
+          ? `Tu es banni de ce serveur jusqu'au ${new Date(activeBan.expires_at).toLocaleString("fr-FR")}.`
+          : "Tu es banni définitivement de ce serveur."
+      );
+      setLoading(false);
+      return;
+    }
     await db.entities.ServerMember.create({
       server_id: server.id,
       user_id: currentUser.id,

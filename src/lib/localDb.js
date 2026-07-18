@@ -12,6 +12,7 @@ const UPLOAD_SERVER_URL = "https://websocketshift.onrender.com";
 
 // Map our "entity" names (used throughout the app) to real Supabase table names.
 const TABLES = {
+  Ban: "bans",
   CallHistory: "call_history",
   Channel: "channels",
   DMConversation: "dm_conversations",

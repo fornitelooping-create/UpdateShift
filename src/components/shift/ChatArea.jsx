@@ -16,6 +16,25 @@ const COMPOSER_EMOJIS = [
   "👍", "👎", "👏", "🙏", "💪", "🔥", "🎉", "❤️", "💯", "✨"
 ];
 
+// Parse une durée du type "30m", "2h", "7d", "1w" (secondes/minutes/heures/
+// jours/semaines, accepte aussi "s", "sec", "min", "j"/"jours", "sem") et
+// retourne un nombre de millisecondes, ou null si le format est invalide.
+function parseDuration(raw) {
+  const m = String(raw || "").trim().match(/^(\d+)\s*(s|sec(?:onde)?s?|m|min(?:ute)?s?|h|hr|heures?|d|j|jours?|w|sem(?:aines?)?)?$/i);
+  if (!m) return null;
+  const value = parseInt(m[1], 10);
+  if (!value || value <= 0) return null;
+  const unit = (m[2] || "m").toLowerCase();
+  const MS = { s: 1000, m: 60 * 1000, h: 60 * 60 * 1000, d: 24 * 60 * 60 * 1000, w: 7 * 24 * 60 * 60 * 1000 };
+  let key = "m";
+  if (unit.startsWith("s")) key = "s";
+  else if (unit.startsWith("h")) key = "h";
+  else if (unit.startsWith("d") || unit.startsWith("j")) key = "d";
+  else if (unit.startsWith("w") || unit.startsWith("sem")) key = "w";
+  else key = "m";
+  return value * MS[key];
+}
+
 export default function ChatArea({
   channel,
   dmConversation,
@@ -31,6 +50,9 @@ export default function ChatArea({
   onOpenDM,
   onAddFriend,
   liveProfiles,
+  isOwner,
+  canUseCommands,
+  serverOwnerId,
 
   // 🔥 Vocal
   voiceMembers,
@@ -51,6 +73,7 @@ export default function ChatArea({
   const [editValue, setEditValue] = useState("");
   const [reactionPickerFor, setReactionPickerFor] = useState(null);
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
+  const [commandNotice, setCommandNotice] = useState(null); // { type: "success" | "error", text }
   const bottomRef = useRef(null);
   const scrollContainerRef = useRef(null);
   const fileInputRef = useRef(null);
@@ -106,6 +129,148 @@ export default function ChatArea({
     );
   };
 
+  useEffect(() => {
+    if (!commandNotice) return;
+    const t = setTimeout(() => setCommandNotice(null), 5000);
+    return () => clearTimeout(t);
+  }, [commandNotice]);
+
+  // -----------------------------------------------------------
+  // Commandes de modération : /clear:N, /ban "user" ["durée"], /unban "user"
+  // Réservées au propriétaire du serveur et aux rôles avec la permission
+  // "use_commands". Ne s'appliquent que dans un salon de serveur (pas en DM).
+  // -----------------------------------------------------------
+  const runClear = async (count) => {
+    if (!count || count < 1) {
+      setCommandNotice({ type: "error", text: "Nombre invalide. Exemple : /clear:20" });
+      return;
+    }
+    const toDelete = messages.slice(-count);
+    if (toDelete.length === 0) {
+      setCommandNotice({ type: "error", text: "Aucun message à supprimer." });
+      return;
+    }
+    try {
+      await Promise.all(toDelete.map((m) => db.entities.Message.delete(m.id)));
+      setCommandNotice({ type: "success", text: `${toDelete.length} message(s) supprimé(s).` });
+    } catch (err) {
+      console.error("Clear command failed", err);
+      setCommandNotice({ type: "error", text: "Échec de la suppression des messages." });
+    }
+  };
+
+  const findMemberByName = (name) => {
+    const uname = name.trim().toLowerCase();
+    return (serverMembers || []).find(
+      (m) => (m.username || "").toLowerCase() === uname || (m.display_name || "").toLowerCase() === uname
+    );
+  };
+
+  const runBan = async (usernameRaw, durationRaw) => {
+    const target = findMemberByName(usernameRaw);
+    if (!target) {
+      setCommandNotice({ type: "error", text: `Utilisateur "${usernameRaw}" introuvable sur ce serveur.` });
+      return;
+    }
+    const targetUserId = target.user_id || target.id;
+    if (targetUserId === serverOwnerId) {
+      setCommandNotice({ type: "error", text: "Impossible de bannir le propriétaire du serveur." });
+      return;
+    }
+    if (targetUserId === currentUser.id) {
+      setCommandNotice({ type: "error", text: "Tu ne peux pas te bannir toi-même." });
+      return;
+    }
+
+    let expiresAt = null;
+    if (durationRaw) {
+      const ms = parseDuration(durationRaw);
+      if (!ms) {
+        setCommandNotice({ type: "error", text: `Durée invalide : "${durationRaw}". Exemple : 30m, 2h, 7d.` });
+        return;
+      }
+      expiresAt = new Date(Date.now() + ms).toISOString();
+    }
+
+    try {
+      await db.entities.Ban.create({
+        server_id: channel.server_id,
+        user_id: targetUserId,
+        username: target.username || target.display_name,
+        banned_by: currentUser.id,
+        banned_by_name: currentUser.display_name || currentUser.username,
+        expires_at: expiresAt
+      });
+      await db.entities.ServerMember.delete(target.id);
+      setCommandNotice({
+        type: "success",
+        text: expiresAt
+          ? `${target.display_name || target.username} banni jusqu'au ${moment(expiresAt).format("DD MMM YYYY, HH:mm")}.`
+          : `${target.display_name || target.username} banni définitivement.`
+      });
+    } catch (err) {
+      console.error("Ban command failed", err);
+      setCommandNotice({ type: "error", text: 'Échec du bannissement (la table "bans" existe-t-elle sur Supabase ?).' });
+    }
+  };
+
+  const runUnban = async (usernameRaw) => {
+    const uname = usernameRaw.trim().toLowerCase();
+    try {
+      const bans = await db.entities.Ban.filter({ server_id: channel.server_id });
+      const matches = bans.filter((b) => (b.username || "").toLowerCase() === uname);
+      if (!matches.length) {
+        setCommandNotice({ type: "error", text: `Aucun bannissement actif trouvé pour "${usernameRaw}".` });
+        return;
+      }
+      await Promise.all(matches.map((b) => db.entities.Ban.delete(b.id)));
+      setCommandNotice({ type: "success", text: `${usernameRaw} a été débanni.` });
+    } catch (err) {
+      console.error("Unban command failed", err);
+      setCommandNotice({ type: "error", text: "Échec du débannissement." });
+    }
+  };
+
+  // Retourne true si le texte était une commande (traitée ou rejetée), pour
+  // que sendMessage() sache qu'il ne faut pas l'envoyer comme message normal.
+  const handleCommand = async (raw) => {
+    const trimmed = raw.trim();
+    if (!/^\/(clear|ban|unban)\b/i.test(trimmed)) return false;
+
+    if (isDM || !channel) {
+      setCommandNotice({ type: "error", text: "Les commandes ne sont disponibles que dans les salons d'un serveur." });
+      return true;
+    }
+    if (!isOwner && !canUseCommands) {
+      setCommandNotice({ type: "error", text: "Tu n'as pas la permission d'utiliser les commandes." });
+      return true;
+    }
+
+    let m = trimmed.match(/^\/clear:\s*(\d+)\s*$/i);
+    if (m) {
+      await runClear(parseInt(m[1], 10));
+      return true;
+    }
+
+    m = trimmed.match(/^\/ban\s+"([^"]+)"(?:\s+"([^"]+)")?\s*$/i);
+    if (m) {
+      await runBan(m[1], m[2] || null);
+      return true;
+    }
+
+    m = trimmed.match(/^\/unban\s+"([^"]+)"\s*$/i);
+    if (m) {
+      await runUnban(m[1]);
+      return true;
+    }
+
+    setCommandNotice({
+      type: "error",
+      text: 'Syntaxe invalide. Utilise /clear:20, /ban "pseudo", /ban "pseudo" "7d" ou /unban "pseudo".'
+    });
+    return true;
+  };
+
   const handleFileSelect = (e) => {
     const file = e.target.files[0];
     if (!file) return;
@@ -126,6 +291,14 @@ export default function ChatArea({
       onSecretCode?.();
       setInput("");
       return;
+    }
+
+    if (!pendingFile && input.trim().startsWith("/")) {
+      const wasCommand = await handleCommand(input);
+      if (wasCommand) {
+        setInput("");
+        return;
+      }
     }
 
     setSending(true);
@@ -496,6 +669,20 @@ export default function ChatArea({
 
       {/* Input */}
       <div className="px-4 pb-4">
+        {commandNotice && (
+          <div
+            className={`flex items-center justify-between gap-2 rounded-lg px-3 py-2 mb-2 text-sm ${
+              commandNotice.type === "error"
+                ? "bg-[#ed4245]/15 text-[#ff6b6e]"
+                : "bg-[#23a559]/15 text-[#3fd67f]"
+            }`}
+          >
+            <span>{commandNotice.text}</span>
+            <button onClick={() => setCommandNotice(null)} className="opacity-70 hover:opacity-100 transition flex-shrink-0">
+              <X className="w-3.5 h-3.5" />
+            </button>
+          </div>
+        )}
         {pendingFile && (
           <div className="flex items-center gap-2 bg-[var(--border-default)] rounded-lg px-3 py-2 mb-2 text-sm text-[var(--text-normal)]">
             <FileText className="w-4 h-4 flex-shrink-0" />
@@ -560,6 +747,7 @@ export default function ChatArea({
           currentUserId={currentUser?.id}
           roles={serverRoles}
           memberRoleIds={serverMembers?.find((m) => (m.user_id || m.id) === selectedUser.user_id)?.role_ids}
+          serverOwnerId={serverOwnerId}
           onClose={() => setSelectedUser(null)}
           onOpenDM={(profile) => {
             setSelectedUser(null);

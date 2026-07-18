@@ -17,5 +17,6 @@ export function computePermissions(member, roles, isOwner) {
     canManageChannels: hasPermission(member, roles, "manage_channels", isOwner),
     canManageRoles: hasPermission(member, roles, "manage_roles", isOwner),
     canKickMembers: hasPermission(member, roles, "kick_members", isOwner),
+    canUseCommands: hasPermission(member, roles, "use_commands", isOwner),
   };
 }

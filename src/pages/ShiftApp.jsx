@@ -741,6 +741,9 @@ export default function ShiftApp() {
                     showMemberList={mobilePage === 2}
                     onToggleMemberList={toggleMemberList}
                     onSecretCode={unlockSignalingField}
+                    isOwner={isMemberOwner}
+                    canUseCommands={myPermissions.canUseCommands}
+                    serverOwnerId={selectedServer?.owner_id}
                     voiceMembers={voiceMembers}
                     currentVoiceChannel={currentVoiceChannel}
                     joinVoice={(channelId) => {
@@ -945,6 +948,9 @@ export default function ShiftApp() {
                 showMemberList={showMemberList}
                 onToggleMemberList={toggleMemberList}
                 onSecretCode={unlockSignalingField}
+                isOwner={isMemberOwner}
+                canUseCommands={myPermissions.canUseCommands}
+                serverOwnerId={selectedServer?.owner_id}
                 voiceMembers={voiceMembers}
                 currentVoiceChannel={currentVoiceChannel}
                 joinVoice={(channelId) => {
