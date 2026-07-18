@@ -6,7 +6,7 @@ import { computePermissions } from "@/lib/permissions";
 import React, { useState, useEffect, useContext, useRef } from "react";
 
 import { ShiftAuthContext } from "@/lib/useShiftAuth";
-import { Plus, Settings, Home, LogOut, ChevronLeft } from "lucide-react";
+import { Plus, Settings, Home, LogOut, ChevronLeft, Compass } from "lucide-react";
 import { useIsMobile } from "@/hooks/use-mobile";
 import UserAvatar from "@/components/shift/UserAvatar";
 import ServerSidebar from "@/components/shift/ServerSidebar";
@@ -19,6 +19,7 @@ import ServerSettingsModal from "@/components/shift/ServerSettingsModal";
 import NewGroupModal from "@/components/shift/NewGroupModal";
 import UserProfileModal from "@/components/shift/UserProfileModal";
 import JoinServerModal from "@/components/shift/JoinServerModal";
+import BrowseServersModal from "@/components/shift/BrowseServersModal";
 import UserSettingsModal from "@/components/shift/UserSettingsModal";
 import ThemeBackground from "@/components/shift/ThemeBackground";
 import CallBar from "@/components/shift/CallBar";
@@ -85,6 +86,7 @@ export default function ShiftApp() {
   const [showFriends, setShowFriends] = useState(true);
   const [showRoles, setShowRoles] = useState(false);
   const [showJoinModal, setShowJoinModal] = useState(false);
+  const [showBrowseModal, setShowBrowseModal] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   const [showServerSettings, setShowServerSettings] = useState(false);
   const [showMemberList, setShowMemberList] = useState(true);
@@ -669,6 +671,14 @@ export default function ShiftApp() {
                 >
                   <Plus className="w-6 h-6" />
                 </button>
+
+                <button
+                  onClick={() => setShowBrowseModal(true)}
+                  title="Voir tous les serveurs"
+                  className="w-12 h-12 rounded-3xl bg-[var(--bg-primary)] hover:bg-[#5865f2] hover:rounded-2xl text-[#5865f2] hover:text-white flex items-center justify-center transition-all"
+                >
+                  <Compass className="w-6 h-6" />
+                </button>
               </div>
 
               {selectedServer ? (
@@ -897,6 +907,14 @@ export default function ShiftApp() {
             >
               <Plus className="w-6 h-6" />
             </button>
+
+            <button
+              onClick={() => setShowBrowseModal(true)}
+              title="Voir tous les serveurs"
+              className="w-12 h-12 rounded-3xl bg-[var(--bg-primary)] hover:bg-[#5865f2] hover:rounded-2xl text-[#5865f2] hover:text-white flex items-center justify-center transition-all"
+            >
+              <Compass className="w-6 h-6" />
+            </button>
           </div>
 
           {/* Secondary sidebar: DM list or server channels */}
@@ -1082,6 +1100,17 @@ export default function ShiftApp() {
           onClose={() => setShowJoinModal(false)}
           onJoined={(server) => {
             setServers((prev) => [...prev, server]);
+            selectServer(server);
+          }}
+        />
+      )}
+
+      {showBrowseModal && (
+        <BrowseServersModal
+          currentUser={user}
+          onClose={() => setShowBrowseModal(false)}
+          onJoined={(server) => {
+            setServers((prev) => (prev.some((s) => s.id === server.id) ? prev : [...prev, server]));
             selectServer(server);
           }}
         />
