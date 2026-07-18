@@ -530,10 +530,14 @@ export default function ShiftApp() {
 
   // Members merged with the live profile cache — always up to date,
   // recomputed on every render, no extra subscription needed.
-  const liveMembers = members.map((m) => ({
-    ...m,
-    ...(liveProfiles[m.user_id || m.id] || {})
-  }));
+  const liveMembers = members.map((m) => {
+    // On exclut volontairement le champ "id" du profil (user_profiles.id)
+    // pour ne jamais écraser l'id réel de la ligne "server_members" (m.id) :
+    // ce dernier est indispensable pour /ban, /kick, etc. qui suppriment
+    // la ligne d'adhésion via cet id précis.
+    const { id: _profileId, ...profileRest } = liveProfiles[m.user_id || m.id] || {};
+    return { ...m, ...profileRest };
+  });
 
   const myMembership = members.find((m) => (m.user_id || m.id) === user?.id);
   const myPermissions = computePermissions(myMembership, roles, isMemberOwner);
