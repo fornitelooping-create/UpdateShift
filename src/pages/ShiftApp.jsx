@@ -553,6 +553,13 @@ export default function ShiftApp() {
     loadServerData(selectedServer.id);
   };
 
+  // Retire un membre de la liste affichée immédiatement, sans attendre
+  // Supabase Realtime (qui peut ne pas être activé sur "server_members").
+  // Utilisé après un /ban ou /unban exécuté depuis le chat.
+  const handleMemberRemovedLocally = (memberRowId) => {
+    setMembers((prev) => prev.filter((m) => m.id !== memberRowId));
+  };
+
   const handleDeleteServer = async () => {
     if (!selectedServer) return;
     await db.entities.Server.delete(selectedServer.id);
@@ -750,6 +757,7 @@ export default function ShiftApp() {
                     isOwner={isMemberOwner}
                     canUseCommands={myPermissions.canUseCommands}
                     serverOwnerId={selectedServer?.owner_id}
+                    onMemberRemoved={handleMemberRemovedLocally}
                     voiceMembers={voiceMembers}
                     currentVoiceChannel={currentVoiceChannel}
                     joinVoice={(channelId) => {
@@ -957,6 +965,7 @@ export default function ShiftApp() {
                 isOwner={isMemberOwner}
                 canUseCommands={myPermissions.canUseCommands}
                 serverOwnerId={selectedServer?.owner_id}
+                onMemberRemoved={handleMemberRemovedLocally}
                 voiceMembers={voiceMembers}
                 currentVoiceChannel={currentVoiceChannel}
                 joinVoice={(channelId) => {

@@ -62,6 +62,7 @@ export default function ChatArea({
   isOwner,
   canUseCommands,
   serverOwnerId,
+  onMemberRemoved,
 
   // 🔥 Vocal
   voiceMembers,
@@ -223,6 +224,10 @@ export default function ChatArea({
       });
       return;
     }
+    // On ne compte pas uniquement sur Supabase Realtime (qui peut ne pas
+    // être activé sur cette table) pour mettre à jour la liste des membres
+    // affichée : on prévient le parent immédiatement.
+    onMemberRemoved?.(target.id);
 
     // 2. On enregistre ensuite le bannissement pour empêcher un retour futur
     //    via le lien d'invitation. Si ça échoue, le membre est quand même
