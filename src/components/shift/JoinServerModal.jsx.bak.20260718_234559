@@ -2,13 +2,12 @@ import { db } from '@/lib/localDb';
 
 import React, { useState } from "react";
 
-import { X, Hash, Loader2, Plus, Link, Lock } from "lucide-react";
+import { X, Hash, Loader2, Plus, Link } from "lucide-react";
 
 export default function JoinServerModal({ currentUser, onClose, onJoined, onCreateInstead }) {
   const [tab, setTab] = useState("join");
   const [inviteCode, setInviteCode] = useState("");
   const [serverName, setServerName] = useState("");
-  const [isPrivate, setIsPrivate] = useState(false);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
 
@@ -73,8 +72,7 @@ export default function JoinServerModal({ currentUser, onClose, onJoined, onCrea
     const s = await db.entities.Server.create({
       name: serverName.trim(),
       owner_id: currentUser.id,
-      invite_code: Math.random().toString(36).substring(2, 8),
-      is_private: isPrivate
+      invite_code: Math.random().toString(36).substring(2, 8)
     });
     await db.entities.Channel.create({ server_id: s.id, name: "général", type: "text", position: 0 });
     await db.entities.ServerMember.create({
@@ -178,21 +176,6 @@ export default function JoinServerModal({ currentUser, onClose, onJoined, onCrea
                 autoFocus
                 className="w-full bg-[var(--bg-tertiary)] text-white px-4 py-3 rounded-lg text-sm outline-none border border-transparent focus:border-[#5865f2] transition placeholder:text-[var(--text-muted)] mb-2"
               />
-              <label className="flex items-center gap-2.5 bg-[var(--bg-tertiary)] rounded-lg px-4 py-3 mb-2 cursor-pointer select-none">
-                <input
-                  type="checkbox"
-                  checked={isPrivate}
-                  onChange={(e) => setIsPrivate(e.target.checked)}
-                  className="w-4 h-4 accent-[#5865f2]"
-                />
-                <Lock className="w-4 h-4 text-[var(--text-muted)] flex-shrink-0" />
-                <span className="flex-1 min-w-0">
-                  <span className="text-white text-sm font-medium block">Serveur privé</span>
-                  <span className="text-[var(--text-muted)] text-xs block">
-                    N'apparaîtra pas dans "Tous les serveurs" ; rejoignable seulement avec le code d'invitation.
-                  </span>
-                </span>
-              </label>
               {error && (
                 <p className="text-red-400 text-sm mb-2 flex items-center justify-between gap-2">
                   <span>{error}</span>

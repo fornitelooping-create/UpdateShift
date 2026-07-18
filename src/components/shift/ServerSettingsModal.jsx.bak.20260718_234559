@@ -2,7 +2,7 @@ import { db } from '@/lib/localDb';
 
 import React, { useState } from "react";
 
-import { X, Camera, Copy, Check, Shield, LogOut, Trash2, Loader2, AlertCircle, Hash, Volume2, Settings2, Plus, ChevronLeft, Ban as BanIcon, Lock } from "lucide-react";
+import { X, Camera, Copy, Check, Shield, LogOut, Trash2, Loader2, AlertCircle, Hash, Volume2, Settings2, Plus, ChevronLeft, Ban as BanIcon } from "lucide-react";
 import UserAvatar from "./UserAvatar";
 import ChannelSettingsModal from "./ChannelSettingsModal";
 import { useIsMobile } from "@/hooks/use-mobile";
@@ -204,21 +204,8 @@ export default function ServerSettingsModal({
                     )}
                   </div>
                   <div>
-                    <p className="text-white font-bold flex items-center gap-1.5">
-                      {server?.name}
-                      {server?.is_private && (
-                        <span className="inline-flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wide bg-[var(--bg-modifier-hover)] text-[var(--text-muted)] px-1.5 py-0.5 rounded">
-                          <Lock className="w-2.5 h-2.5" />
-                          Privé
-                        </span>
-                      )}
-                    </p>
+                    <p className="text-white font-bold">{server?.name}</p>
                     <p className="text-[var(--text-muted-alt)] text-xs">{members.length} membre{members.length > 1 ? "s" : ""}</p>
-                    {server?.is_private && (
-                      <p className="text-[var(--text-muted)] text-xs mt-0.5">
-                        N'apparaît pas dans "Tous les serveurs". Seul un administrateur peut changer ça.
-                      </p>
-                    )}
                   </div>
                 </div>
 
