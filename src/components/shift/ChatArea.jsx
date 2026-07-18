@@ -204,18 +204,23 @@ export default function ChatArea({
     // 1. L'expulsion est l'effet le plus important d'un ban : elle doit
     //    TOUJOURS avoir lieu, même si l'enregistrement persistant du
     //    bannissement échoue juste après (table "bans" absente, etc.).
+    //    On ne se fie pas à la valeur renvoyée par delete() : selon les
+    //    policies RLS de lecture, Supabase peut renvoyer "null" même quand
+    //    la suppression a réellement eu lieu. On vérifie donc pour de vrai
+    //    en relisant la ligne juste après.
     try {
-      const deleted = await db.entities.ServerMember.delete(target.id);
-      if (!deleted) {
-        setCommandNotice({
-          type: "error",
-          text: "La base de données a refusé l'expulsion (policy RLS sur \"server_members\" dans Supabase). Le membre n'a PAS été banni."
-        });
-        return;
-      }
+      await db.entities.ServerMember.delete(target.id);
     } catch (err) {
       console.error("Ban command: expulsion failed", err);
       setCommandNotice({ type: "error", text: "Échec du bannissement : impossible d'expulser ce membre." });
+      return;
+    }
+    const stillMember = await db.entities.ServerMember.get(target.id);
+    if (stillMember) {
+      setCommandNotice({
+        type: "error",
+        text: "La base de données a refusé l'expulsion (policy RLS sur \"server_members\" dans Supabase). Le membre n'a PAS été banni."
+      });
       return;
     }
 
