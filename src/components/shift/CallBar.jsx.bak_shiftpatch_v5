@@ -2,12 +2,12 @@ import { db } from '@/lib/localDb';
 
 import React, { useState, useEffect } from "react";
 
-import { Phone, PhoneOff, Mic, MicOff, PhoneIncoming, PhoneCall, X } from "lucide-react";
+import { Phone, PhoneOff, Mic, MicOff, PhoneIncoming, PhoneCall } from "lucide-react";
 import UserAvatar from "./UserAvatar";
 import { applyOutputDevice } from "@/lib/audioDeviceSettings";
 
 export default function CallBar({ call }) {
-  const { callState, remoteUserId, muted, connectionError, setConnectionError, remoteAudioRef, remoteStream, acceptCall, declineCall, endCall, toggleMute } = call;
+  const { callState, remoteUserId, muted, connectionError, remoteAudioRef, remoteStream, acceptCall, declineCall, endCall, toggleMute } = call;
   const [remoteProfile, setRemoteProfile] = useState(null);
 
   useEffect(() => {
@@ -37,15 +37,8 @@ export default function CallBar({ call }) {
       <audio ref={remoteAudioRef} autoPlay />
 
       {connectionError && callState === "idle" && (
-        <div className="fixed bottom-16 left-1/2 -translate-x-1/2 z-[70] bg-[#ed4245] text-white text-sm pl-4 pr-2 py-2 rounded-lg shadow-xl flex items-center gap-3 max-w-[90vw]">
-          <span>{connectionError}</span>
-          <button
-            onClick={() => setConnectionError(null)}
-            title="Fermer"
-            className="p-1 rounded hover:bg-white/20 transition flex-shrink-0"
-          >
-            <X className="w-4 h-4" />
-          </button>
+        <div className="fixed bottom-16 left-1/2 -translate-x-1/2 z-[70] bg-[#ed4245] text-white text-sm px-4 py-2 rounded-lg shadow-xl">
+          {connectionError}
         </div>
       )}
 

@@ -438,7 +438,6 @@ export function useVoiceCall(user, signalingUrl) {
     remoteUserId,
     muted,
     connectionError,
-    setConnectionError,
     socketReady,
     remoteAudioRef,
     remoteStream,
