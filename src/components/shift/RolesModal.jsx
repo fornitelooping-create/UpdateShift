@@ -77,7 +77,8 @@ export default function RolesModal({ server, members, onClose, onUpdate }) {
     { key: "manage_channels", label: "Gérer les canaux" },
     { key: "manage_roles", label: "Gérer les rôles" },
     { key: "kick_members", label: "Expulser des membres" },
-    { key: "use_commands", label: "Utiliser les commandes (/clear, /ban, /unban)" }
+    { key: "use_commands", label: "Utiliser les commandes (/clear, /ban, /unban)" },
+    { key: "view_bans", label: "Voir les membres bannis" }
   ];
 
   return (

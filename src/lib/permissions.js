@@ -18,5 +18,6 @@ export function computePermissions(member, roles, isOwner) {
     canManageRoles: hasPermission(member, roles, "manage_roles", isOwner),
     canKickMembers: hasPermission(member, roles, "kick_members", isOwner),
     canUseCommands: hasPermission(member, roles, "use_commands", isOwner),
+    canViewBans: hasPermission(member, roles, "view_bans", isOwner),
   };
 }

@@ -2,10 +2,13 @@ import { db } from '@/lib/localDb';
 
 import React, { useState } from "react";
 
-import { X, Camera, Copy, Check, Shield, LogOut, Trash2, Loader2, AlertCircle, Hash, Volume2, Settings2, Plus, ChevronLeft } from "lucide-react";
+import { X, Camera, Copy, Check, Shield, LogOut, Trash2, Loader2, AlertCircle, Hash, Volume2, Settings2, Plus, ChevronLeft, Ban as BanIcon } from "lucide-react";
 import UserAvatar from "./UserAvatar";
 import ChannelSettingsModal from "./ChannelSettingsModal";
 import { useIsMobile } from "@/hooks/use-mobile";
+import moment from "moment";
+import "moment/locale/fr";
+moment.locale("fr");
 
 export default function ServerSettingsModal({
   server,
@@ -38,6 +41,9 @@ export default function ServerSettingsModal({
   const [showConfirmLeave, setShowConfirmLeave] = useState(false);
   const [editingChannelId, setEditingChannelId] = useState(null);
   const [confirmDeleteChannel, setConfirmDeleteChannel] = useState(null);
+  const [bans, setBans] = useState([]);
+  const [bansLoading, setBansLoading] = useState(false);
+  const [unbanningId, setUnbanningId] = useState(null);
 
   const editingChannel = (channels || []).find((c) => c.id === editingChannelId) || null;
 
@@ -45,6 +51,29 @@ export default function ServerSettingsModal({
 
   const canManageChannels = permissions?.canManageChannels ?? isMemberOwner;
   const canManageRoles = permissions?.canManageRoles ?? isMemberOwner;
+  const canViewBans = permissions?.canViewBans ?? isMemberOwner;
+
+  const loadBans = async () => {
+    if (!server?.id) return;
+    setBansLoading(true);
+    const rows = await db.entities.Ban.filter({ server_id: server.id });
+    setBans(
+      rows.slice().sort((a, b) => new Date(b.created_date || 0) - new Date(a.created_date || 0))
+    );
+    setBansLoading(false);
+  };
+
+  const handleUnban = async (ban) => {
+    setUnbanningId(ban.id);
+    try {
+      await db.entities.Ban.delete(ban.id);
+      setBans((prev) => prev.filter((b) => b.id !== ban.id));
+    } catch (err) {
+      console.error("Échec du débannissement", err);
+    } finally {
+      setUnbanningId(null);
+    }
+  };
 
   const handleIconChange = async (e) => {
     const file = e.target.files[0];
@@ -76,6 +105,7 @@ export default function ServerSettingsModal({
     { id: "overview", label: "Vue d'ensemble" },
     ...(canManageChannels ? [{ id: "channels", label: "Salons" }] : []),
     ...(canManageRoles ? [{ id: "roles", label: "Rôles" }] : []),
+    ...(canViewBans ? [{ id: "bans", label: "Membres bannis" }] : []),
     { id: "leave", label: isMemberOwner ? "Quitter / Transférer" : "Quitter le serveur" }
   ];
 
@@ -107,6 +137,7 @@ export default function ServerSettingsModal({
               key={t.id}
               onClick={() => {
                 setTab(t.id);
+                if (t.id === "bans") loadBans();
                 if (isMobile) setMobileShowContent(true);
               }}
               className={`text-left px-3 py-2 rounded-lg text-sm font-medium transition mb-0.5 ${
@@ -250,6 +281,63 @@ export default function ServerSettingsModal({
                   <Shield className="w-4 h-4" />
                   Ouvrir le gestionnaire de rôles
                 </button>
+              </div>
+            )}
+
+            {tab === "bans" && (
+              <div className="space-y-4">
+                <div>
+                  <h3 className="text-white font-semibold text-sm mb-1">Membres bannis</h3>
+                  <p className="text-[var(--text-muted)] text-xs">
+                    Ces personnes ne peuvent pas rejoindre {server?.name} tant qu'elles restent bannies.
+                  </p>
+                </div>
+
+                {bansLoading ? (
+                  <div className="animate-pulse space-y-2">
+                    {[1, 2, 3].map((i) => <div key={i} className="h-12 bg-[var(--border-default)] rounded-lg" />)}
+                  </div>
+                ) : bans.length === 0 ? (
+                  <p className="text-[var(--text-muted)] text-sm italic">Aucun membre banni pour l'instant.</p>
+                ) : (
+                  <div className="space-y-2">
+                    {bans.map((ban) => {
+                      const expired = ban.expires_at && new Date(ban.expires_at) < new Date();
+                      return (
+                        <div
+                          key={ban.id}
+                          className="flex items-center justify-between gap-3 bg-[var(--bg-tertiary)] rounded-lg px-3 py-2.5"
+                        >
+                          <div className="flex items-center gap-2.5 min-w-0">
+                            <div className="w-8 h-8 rounded-full bg-[#ed4245]/15 flex items-center justify-center flex-shrink-0">
+                              <BanIcon className="w-4 h-4 text-[#ed4245]" />
+                            </div>
+                            <div className="min-w-0">
+                              <p className="text-white text-sm font-medium truncate">{ban.username || "Utilisateur inconnu"}</p>
+                              <p className="text-[var(--text-muted)] text-xs truncate">
+                                Banni par {ban.banned_by_name || "?"}
+                                {ban.created_date ? ` · ${moment(ban.created_date).format("DD MMM YYYY")}` : ""}
+                                {ban.expires_at
+                                  ? expired
+                                    ? " · expiré"
+                                    : ` · jusqu'au ${moment(ban.expires_at).format("DD MMM YYYY, HH:mm")}`
+                                  : " · définitif"}
+                              </p>
+                            </div>
+                          </div>
+                          <button
+                            onClick={() => handleUnban(ban)}
+                            disabled={unbanningId === ban.id}
+                            className="flex-shrink-0 flex items-center gap-1.5 bg-[var(--border-default)] hover:bg-[var(--bg-modifier-hover-strong)] disabled:opacity-50 text-white px-3 py-1.5 rounded-lg text-xs font-medium transition"
+                          >
+                            {unbanningId === ban.id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : null}
+                            Débannir
+                          </button>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
               </div>
             )}
 
