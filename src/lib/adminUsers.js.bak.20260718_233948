@@ -7,7 +7,7 @@
 // son username exact (celui utilisé pour se connecter, pas le pseudo
 // affiché) dans le tableau ci-dessous.
 export const ADMIN_USERNAMES = [
-  "looping",
+  // "looping",
 ];
 
 export function isSiteAdmin(user) {
