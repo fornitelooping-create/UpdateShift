@@ -318,23 +318,8 @@ export default function ShiftApp() {
 
     const drag = { startX: 0, startY: 0, dragging: false, horizontal: null, baseX: 0 };
 
-    // Éléments sur lesquels le swipe ne doit JAMAIS s'activer : sinon un
-    // léger tremblement du doigt en tapant sur le champ de message (ou en
-    // faisant défiler une liste, ou en appuyant sur un bouton) est détecté
-    // comme un swipe horizontal, on appelle preventDefault(), et ça bloque
-    // l'ouverture du clavier / le focus / le clic — d'où "impossible
-    // d'écrire" sur mobile.
-    const isInteractiveTarget = (el) =>
-      !!el.closest('input, textarea, select, button, a, [contenteditable="true"], [role="button"], [role="textbox"]');
-
     const onTouchStart = (e) => {
       const t = e.touches[0];
-      if (isInteractiveTarget(e.target)) {
-        // On laisse le navigateur gérer normalement le tap/focus/scroll de
-        // cet élément, sans jamais déclencher notre logique de swipe.
-        drag.dragging = false;
-        return;
-      }
       track.style.transition = "none";
       drag.startX = t.clientX;
       drag.startY = t.clientY;
