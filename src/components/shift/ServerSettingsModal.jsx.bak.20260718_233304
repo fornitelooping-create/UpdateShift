@@ -18,7 +18,6 @@ export default function ServerSettingsModal({
   categories,
   currentUser,
   isMemberOwner,
-  isSiteAdmin,
   permissions,
   onClose,
   onManageRoles,
@@ -53,7 +52,6 @@ export default function ServerSettingsModal({
   const canManageChannels = permissions?.canManageChannels ?? isMemberOwner;
   const canManageRoles = permissions?.canManageRoles ?? isMemberOwner;
   const canViewBans = permissions?.canViewBans ?? isMemberOwner;
-  const canDeleteServer = isMemberOwner || isSiteAdmin;
 
   const loadBans = async () => {
     if (!server?.id) return;
@@ -149,17 +147,12 @@ export default function ServerSettingsModal({
               {t.label}
             </button>
           ))}
-          {canDeleteServer && (
+          {isMemberOwner && (
             <button
               onClick={() => setShowConfirmDelete(true)}
-              className="text-left px-3 py-2 rounded-lg text-sm font-medium text-[#ed4245] hover:bg-[#ed4245]/10 transition mt-auto flex items-center gap-1.5"
+              className="text-left px-3 py-2 rounded-lg text-sm font-medium text-[#ed4245] hover:bg-[#ed4245]/10 transition mt-auto"
             >
               Supprimer le serveur
-              {!isMemberOwner && isSiteAdmin && (
-                <span className="text-[10px] font-bold uppercase tracking-wide bg-[#ed4245]/20 text-[#ed4245] px-1.5 py-0.5 rounded">
-                  Admin
-                </span>
-              )}
             </button>
           )}
         </div>
@@ -444,18 +437,13 @@ export default function ServerSettingsModal({
         </div>
       )}
 
-      {/* Confirm delete (owner, or site admin closing a server they don't own) */}
+      {/* Confirm delete (owner) */}
       {showConfirmDelete && (
         <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60" onClick={(e) => { e.stopPropagation(); setShowConfirmDelete(false); }}>
           <div className="bg-[var(--bg-primary)] rounded-xl p-6 w-80 shadow-2xl" onClick={(e) => e.stopPropagation()}>
             <h3 className="text-white font-bold text-lg mb-2">Supprimer le serveur</h3>
             <p className="text-[var(--text-secondary)] text-sm mb-5">
               Es-tu sûr de vouloir supprimer <strong className="text-white">{server?.name}</strong> ? Cette action est irréversible.
-              {!isMemberOwner && isSiteAdmin && (
-                <span className="block mt-2 text-[#ed4245]">
-                  Tu n'es pas propriétaire de ce serveur : cette suppression s'effectue avec tes droits d'administrateur.
-                </span>
-              )}
             </p>
             <div className="flex gap-3">
               <button onClick={() => setShowConfirmDelete(false)} className="flex-1 bg-[var(--border-default)] hover:bg-[var(--bg-modifier-hover-strong)] text-white py-2.5 rounded-lg text-sm font-medium transition">

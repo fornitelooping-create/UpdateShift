@@ -2,7 +2,6 @@ import { useVoiceChannel } from "../hooks/useVoiceChannel";
 
 import { db } from '@/lib/localDb';
 import { computePermissions } from "@/lib/permissions";
-import { isSiteAdmin } from "@/lib/adminUsers";
 
 import React, { useState, useEffect, useContext, useRef } from "react";
 
@@ -322,7 +321,6 @@ export default function ShiftApp() {
   };
 
   const isMemberOwner = selectedServer && user && selectedServer.owner_id === user.id;
-  const userIsSiteAdmin = isSiteAdmin(user);
 
   const selectServer = (server) => {
     setSelectedServer(server);
@@ -1082,7 +1080,6 @@ export default function ShiftApp() {
           categories={categories}
           currentUser={user}
           isMemberOwner={isMemberOwner}
-          isSiteAdmin={userIsSiteAdmin}
           permissions={myPermissions}
           onClose={() => setShowServerSettings(false)}
           onManageRoles={() => setShowRoles(true)}
@@ -1111,15 +1108,10 @@ export default function ShiftApp() {
       {showBrowseModal && (
         <BrowseServersModal
           currentUser={user}
-          isSiteAdmin={userIsSiteAdmin}
           onClose={() => setShowBrowseModal(false)}
           onJoined={(server) => {
             setServers((prev) => (prev.some((s) => s.id === server.id) ? prev : [...prev, server]));
             selectServer(server);
-          }}
-          onServerDeleted={(serverId) => {
-            setServers((prev) => prev.filter((s) => s.id !== serverId));
-            if (selectedServer?.id === serverId) goHome();
           }}
         />
       )}
