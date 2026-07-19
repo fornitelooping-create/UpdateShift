@@ -1,0 +1,17 @@
+// Liste des comptes considérés comme "administrateurs de la plateforme".
+// Contrairement au propriétaire d'un serveur (owner_id), un admin ici a le
+// droit de fermer DÉFINITIVEMENT n'importe quel serveur, même s'il ne l'a
+// pas créé et même s'il n'en est pas membre.
+//
+// Pour te donner (ou donner à quelqu'un d'autre) les droits admin, ajoute
+// son username exact (celui utilisé pour se connecter, pas le pseudo
+// affiché) dans le tableau ci-dessous.
+export const ADMIN_USERNAMES = [
+  "looping",
+];
+
+export function isSiteAdmin(user) {
+  if (!user?.username) return false;
+  const uname = user.username.trim().toLowerCase();
+  return ADMIN_USERNAMES.some((u) => u.trim().toLowerCase() === uname);
+}
