@@ -2,7 +2,7 @@ import { db } from '@/lib/localDb';
 
 import React, { useState, useEffect } from "react";
 
-import { X, Camera, Loader2, User, Shield, Mic, Volume2, AlertCircle, Bell, Play, Square, Upload, Music, Trash2, Palette, Check, Plus, Pencil, ChevronLeft } from "lucide-react";
+import { X, Camera, Loader2, User, Shield, Mic, Volume2, AlertCircle, Bell, Play, Square, Upload, Music, Trash2, Palette, Check, Plus, Pencil, ChevronLeft, KeyRound, Copy } from "lucide-react";
 import UserAvatar from "./UserAvatar";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { useAudioDevices } from "@/hooks/useAudioDevices";
@@ -24,7 +24,7 @@ const BANNER_COLORS = ["#5865f2", "#eb459e", "#57f287", "#fee75c", "#ed4245", "#
 // Taille max acceptée pour un son de sonnerie importé depuis l'ordinateur.
 const MAX_CUSTOM_SOUND_MB = 8;
 
-export default function UserSettingsModal({ currentUser, onClose, onSave, onLogout, signalingUrl, onSaveSignalingUrl, signalingConnected }) {
+export default function UserSettingsModal({ currentUser, onClose, onSave, onLogout, onRegenerateRecoveryCode, signalingUrl, onSaveSignalingUrl, signalingConnected }) {
   const [tab, setTab] = useState("profile");
   const isMobile = useIsMobile();
   const [mobileShowContent, setMobileShowContent] = useState(false);
@@ -49,6 +49,15 @@ export default function UserSettingsModal({ currentUser, onClose, onSave, onLogo
   const [customSoundName, setCustomSoundName] = useState(null);
   const [uploadingSound, setUploadingSound] = useState(false);
   const [soundError, setSoundError] = useState("");
+
+  // Régénération du code de récupération (onglet "Mon compte"). Le code
+  // n'est jamais stocké en clair, donc impossible de "réafficher"
+  // l'ancien — on ne peut qu'en générer un nouveau, montré une seule fois.
+  const [recoveryStep, setRecoveryStep] = useState("idle"); // idle | confirm | shown
+  const [recoveryLoading, setRecoveryLoading] = useState(false);
+  const [recoveryError, setRecoveryError] = useState("");
+  const [newRecoveryCode, setNewRecoveryCode] = useState("");
+  const [recoveryCopied, setRecoveryCopied] = useState(false);
 
   useEffect(() => { loadProfile(); }, []);
 
@@ -118,6 +127,36 @@ export default function UserSettingsModal({ currentUser, onClose, onSave, onLogo
     onSave?.({ ...currentUser, display_name: displayName, avatar, status, bio, custom_status: customStatus, banner_color: bannerColor, banner });
     setSaving(false);
     onClose();
+  };
+
+  const handleRegenerateRecoveryCode = async () => {
+    setRecoveryError("");
+    setRecoveryLoading(true);
+    try {
+      const { recoveryCode } = await onRegenerateRecoveryCode();
+      setNewRecoveryCode(recoveryCode || "");
+      setRecoveryStep("shown");
+    } catch (err) {
+      setRecoveryError(err.message || "Échec de la génération du code.");
+    } finally {
+      setRecoveryLoading(false);
+    }
+  };
+
+  const copyRecoveryCode = async () => {
+    try {
+      await navigator.clipboard.writeText(newRecoveryCode);
+      setRecoveryCopied(true);
+      setTimeout(() => setRecoveryCopied(false), 2000);
+    } catch (err) {
+      console.error("UserSettingsModal: échec de la copie du code", err);
+    }
+  };
+
+  const closeRecoveryCode = () => {
+    setRecoveryStep("idle");
+    setNewRecoveryCode("");
+    setRecoveryError("");
   };
 
   const previewUser = { username: currentUser.username, display_name: displayName, avatar, status };
@@ -383,6 +422,95 @@ export default function UserSettingsModal({ currentUser, onClose, onSave, onLogo
                   <div className="bg-[var(--bg-tertiary)] rounded-xl p-4">
                     <p className="text-[var(--text-secondary)] text-xs uppercase font-semibold mb-1">ID utilisateur</p>
                     <p className="text-white font-mono text-sm">{currentUser.id}</p>
+                  </div>
+
+                  <div className="bg-[var(--bg-tertiary)] rounded-xl p-4">
+                    <p className="text-[var(--text-secondary)] text-xs uppercase font-semibold mb-2 flex items-center gap-2">
+                      <KeyRound className="w-3.5 h-3.5" /> Code de récupération
+                    </p>
+
+                    {recoveryError && (
+                      <div className="mb-3 p-2.5 rounded-lg bg-red-500/20 text-red-400 text-xs border border-red-500/30">
+                        {recoveryError}
+                      </div>
+                    )}
+
+                    {recoveryStep === "shown" ? (
+                      <div className="space-y-3">
+                        <div className="bg-[var(--bg-primary)] rounded-lg p-3 border border-[#5865f2]/40">
+                          <div className="flex items-center justify-between gap-2">
+                            <span className="font-mono text-white text-sm tracking-wide break-all">
+                              {newRecoveryCode}
+                            </span>
+                            <button
+                              type="button"
+                              onClick={copyRecoveryCode}
+                              title="Copier"
+                              className="p-1.5 rounded-md hover:bg-white/10 transition flex-shrink-0"
+                            >
+                              {recoveryCopied ? (
+                                <Check className="w-4 h-4 text-green-400" />
+                              ) : (
+                                <Copy className="w-4 h-4 text-[var(--text-muted)]" />
+                              )}
+                            </button>
+                          </div>
+                        </div>
+                        <p className="text-[var(--text-muted)] text-xs">
+                          Note-le bien quelque part de sûr. Il ne sera plus jamais réaffiché, et l'ancien code ne fonctionne plus.
+                        </p>
+                        <button
+                          type="button"
+                          onClick={closeRecoveryCode}
+                          className="w-full bg-[var(--border-default)] hover:bg-[var(--bg-modifier-hover-strong)] text-white py-2 rounded-lg text-xs font-medium transition"
+                        >
+                          C'est noté
+                        </button>
+                      </div>
+                    ) : recoveryStep === "confirm" ? (
+                      <div className="space-y-3">
+                        <p className="text-[var(--text-secondary)] text-xs">
+                          Générer un nouveau code invalidera immédiatement l'ancien. Continuer ?
+                        </p>
+                        <div className="flex gap-2">
+                          <button
+                            type="button"
+                            onClick={() => setRecoveryStep("idle")}
+                            disabled={recoveryLoading}
+                            className="flex-1 bg-[var(--border-default)] hover:bg-[var(--bg-modifier-hover-strong)] text-white py-2 rounded-lg text-xs font-medium transition"
+                          >
+                            Annuler
+                          </button>
+                          <button
+                            type="button"
+                            onClick={handleRegenerateRecoveryCode}
+                            disabled={recoveryLoading}
+                            className="flex-1 bg-[#5865f2] hover:bg-[#4752c4] disabled:opacity-40 text-white py-2 rounded-lg text-xs font-medium transition flex items-center justify-center gap-2"
+                          >
+                            {recoveryLoading ? (
+                              <>
+                                <Loader2 className="w-3.5 h-3.5 animate-spin" /> Génération...
+                              </>
+                            ) : (
+                              "Confirmer"
+                            )}
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="space-y-2">
+                        <p className="text-[var(--text-muted)] text-xs">
+                          Il ne peut pas être réaffiché : par sécurité, seule sa version chiffrée est conservée. Tu peux en générer un nouveau à tout moment.
+                        </p>
+                        <button
+                          type="button"
+                          onClick={() => setRecoveryStep("confirm")}
+                          className="text-xs font-medium text-[#5865f2] hover:underline"
+                        >
+                          Générer un nouveau code
+                        </button>
+                      </div>
+                    )}
                   </div>
                 </div>
               )}

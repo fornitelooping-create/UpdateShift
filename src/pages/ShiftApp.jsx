@@ -52,7 +52,7 @@ function isChannelVisible(channel, { isOwner, userId, member }) {
 }
 
 export default function ShiftApp() {
-  const { user, logout, updateUser } = useContext(ShiftAuthContext);
+  const { user, logout, updateUser, regenerateRecoveryCode } = useContext(ShiftAuthContext);
 
   // Bascule automatiquement le statut online/offline selon que l'app est
   // au premier plan ou en arrière-plan (tray, minimisée, sans focus).
@@ -1246,6 +1246,7 @@ export default function ShiftApp() {
           onClose={() => setShowSettings(false)}
           onSave={(updated) => updateUser(updated)}
           onLogout={logout}
+          onRegenerateRecoveryCode={regenerateRecoveryCode}
           signalingUrl={signalingUrl}
           onSaveSignalingUrl={signalingUnlocked ? setSignalingUrl : undefined}
           signalingConnected={call.socketReady}

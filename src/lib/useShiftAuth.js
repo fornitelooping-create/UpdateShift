@@ -8,7 +8,8 @@ import {
   loginWithPassword as authLoginWithPassword,
   logout as authLogout,
   updateCurrentUser,
-  resetPasswordWithCode as authResetPasswordWithCode
+  resetPasswordWithCode as authResetPasswordWithCode,
+  regenerateRecoveryCode as authRegenerateRecoveryCode
 } from "./auth";
 
 export const ShiftAuthContext = createContext(null);
@@ -115,6 +116,11 @@ export function useShiftAuthProvider() {
   const resetPasswordWithCode = (username, recoveryCode, newPassword) =>
     authResetPasswordWithCode(username, recoveryCode, newPassword);
 
+  // Depuis les paramètres, à tout moment : régénère le code de
+  // récupération du compte connecté. Renvoie le nouveau code à afficher
+  // une seule fois.
+  const regenerateRecoveryCode = () => authRegenerateRecoveryCode();
+
   const logout = async () => {
     await authLogout();
     setUser(null);
@@ -134,6 +140,7 @@ export function useShiftAuthProvider() {
     completeSignup,
     loginWithPassword,
     resetPasswordWithCode,
+    regenerateRecoveryCode,
     logout,
     updateUser,
   };

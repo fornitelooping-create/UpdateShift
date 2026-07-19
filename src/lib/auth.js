@@ -120,6 +120,33 @@ export async function resetPasswordWithCode(username, recoveryCode, newPassword)
 }
 
 /**
+ * Régénère le code de récupération pour l'utilisateur ACTUELLEMENT connecté
+ * (depuis les paramètres, à tout moment). Contrairement à
+ * resetPasswordWithCode, pas besoin d'Edge Function ici : on modifie le
+ * compte de la session en cours, donc updateUser() suffit, comme à
+ * l'inscription. L'ancien code (dont on n'a de toute façon jamais gardé
+ * que le hash) devient invalide dès que le nouveau hash est enregistré.
+ *
+ * Renvoie le nouveau code — à afficher une seule fois à l'écran, il ne
+ * sera plus jamais récupérable ensuite.
+ */
+export async function regenerateRecoveryCode() {
+  const { data: userData, error: userError } = await supabase.auth.getUser();
+  if (userError || !userData?.user) {
+    throw new Error("Tu dois être connecté pour régénérer ton code de récupération.");
+  }
+
+  const recoveryCode = generateRecoveryCode();
+  const recovery_code_hash = await hashRecoveryCode(recoveryCode);
+  const { error } = await supabase.auth.updateUser({
+    data: { recovery_code_hash },
+  });
+  if (error) throw error;
+
+  return { recoveryCode };
+}
+
+/**
  * New account, step 2: pick a display name and create the public profile.
  * Requires an active session (created by registerAccount above).
  */
