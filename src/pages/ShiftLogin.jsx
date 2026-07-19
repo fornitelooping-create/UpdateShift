@@ -1,7 +1,38 @@
 import shiftLogo from '../assets/shift.ico';
 import React, { useState, useContext } from "react";
 import { ShiftAuthContext } from "@/lib/useShiftAuth";
-import { User, Lock, Loader2, X, Copy, Check, KeyRound, ArrowLeft } from "lucide-react";
+import { User, Lock, Loader2, X, Copy, Check, KeyRound, ArrowLeft, Eye, EyeOff } from "lucide-react";
+
+// Champ mot de passe avec bouton oeil pour afficher/masquer la saisie.
+// L'état "visible" est local à chaque instance, donc chaque champ (mot de
+// passe, confirmation...) a son propre bouton indépendant.
+function PasswordInput({ value, onChange, placeholder, required, autoFocus }) {
+  const [visible, setVisible] = useState(false);
+
+  return (
+    <div className="relative">
+      <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[var(--text-muted)]" />
+      <input
+        type={visible ? "text" : "password"}
+        value={value}
+        onChange={onChange}
+        placeholder={placeholder}
+        className="w-full bg-[var(--bg-tertiary)] text-white pl-10 pr-10 py-3 rounded-lg border border-transparent focus:border-[#5865f2] focus:outline-none transition text-sm"
+        required={required}
+        autoFocus={autoFocus}
+      />
+      <button
+        type="button"
+        onClick={() => setVisible((v) => !v)}
+        tabIndex={-1}
+        title={visible ? "Masquer le mot de passe" : "Afficher le mot de passe"}
+        className="absolute right-3 top-1/2 -translate-y-1/2 text-[var(--text-muted)] hover:text-white transition"
+      >
+        {visible ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+      </button>
+    </div>
+  );
+}
 
 export default function ShiftLogin() {
   const {
@@ -245,18 +276,13 @@ export default function ShiftLogin() {
               <label className="block text-[var(--text-secondary)] text-xs font-semibold uppercase tracking-wide mb-2">
                 Mot de passe
               </label>
-              <div className="relative">
-                <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[var(--text-muted)]" />
-                <input
-                  type="password"
-                  value={password}
-                  onChange={(e) => setPasswordValue(e.target.value)}
-                  placeholder="••••••••"
-                  className="w-full bg-[var(--bg-tertiary)] text-white pl-10 pr-4 py-3 rounded-lg border border-transparent focus:border-[#5865f2] focus:outline-none transition text-sm"
-                  required
-                  autoFocus
-                />
-              </div>
+              <PasswordInput
+                value={password}
+                onChange={(e) => setPasswordValue(e.target.value)}
+                placeholder="••••••••"
+                required
+                autoFocus
+              />
               <div className="text-right mt-2">
                 <button
                   type="button"
@@ -320,33 +346,23 @@ export default function ShiftLogin() {
               <label className="block text-[var(--text-secondary)] text-xs font-semibold uppercase tracking-wide mb-2">
                 Nouveau mot de passe
               </label>
-              <div className="relative">
-                <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[var(--text-muted)]" />
-                <input
-                  type="password"
-                  value={newPassword}
-                  onChange={(e) => setNewPassword(e.target.value)}
-                  placeholder="Au moins 6 caractères"
-                  className="w-full bg-[var(--bg-tertiary)] text-white pl-10 pr-4 py-3 rounded-lg border border-transparent focus:border-[#5865f2] focus:outline-none transition text-sm"
-                  required
-                />
-              </div>
+              <PasswordInput
+                value={newPassword}
+                onChange={(e) => setNewPassword(e.target.value)}
+                placeholder="Au moins 6 caractères"
+                required
+              />
             </div>
             <div>
               <label className="block text-[var(--text-secondary)] text-xs font-semibold uppercase tracking-wide mb-2">
                 Confirme le nouveau mot de passe
               </label>
-              <div className="relative">
-                <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[var(--text-muted)]" />
-                <input
-                  type="password"
-                  value={newPasswordConfirm}
-                  onChange={(e) => setNewPasswordConfirm(e.target.value)}
-                  placeholder="Retape le mot de passe"
-                  className="w-full bg-[var(--bg-tertiary)] text-white pl-10 pr-4 py-3 rounded-lg border border-transparent focus:border-[#5865f2] focus:outline-none transition text-sm"
-                  required
-                />
-              </div>
+              <PasswordInput
+                value={newPasswordConfirm}
+                onChange={(e) => setNewPasswordConfirm(e.target.value)}
+                placeholder="Retape le mot de passe"
+                required
+              />
             </div>
 
             <button
@@ -416,34 +432,24 @@ export default function ShiftLogin() {
               <label className="block text-[var(--text-secondary)] text-xs font-semibold uppercase tracking-wide mb-2">
                 Mot de passe
               </label>
-              <div className="relative">
-                <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[var(--text-muted)]" />
-                <input
-                  type="password"
-                  value={password}
-                  onChange={(e) => setPasswordValue(e.target.value)}
-                  placeholder="Au moins 6 caractères"
-                  className="w-full bg-[var(--bg-tertiary)] text-white pl-10 pr-4 py-3 rounded-lg border border-transparent focus:border-[#5865f2] focus:outline-none transition text-sm"
-                  required
-                  autoFocus
-                />
-              </div>
+              <PasswordInput
+                value={password}
+                onChange={(e) => setPasswordValue(e.target.value)}
+                placeholder="Au moins 6 caractères"
+                required
+                autoFocus
+              />
             </div>
             <div>
               <label className="block text-[var(--text-secondary)] text-xs font-semibold uppercase tracking-wide mb-2">
                 Confirme le mot de passe
               </label>
-              <div className="relative">
-                <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[var(--text-muted)]" />
-                <input
-                  type="password"
-                  value={passwordConfirm}
-                  onChange={(e) => setPasswordConfirm(e.target.value)}
-                  placeholder="Retape le mot de passe"
-                  className="w-full bg-[var(--bg-tertiary)] text-white pl-10 pr-4 py-3 rounded-lg border border-transparent focus:border-[#5865f2] focus:outline-none transition text-sm"
-                  required
-                />
-              </div>
+              <PasswordInput
+                value={passwordConfirm}
+                onChange={(e) => setPasswordConfirm(e.target.value)}
+                placeholder="Retape le mot de passe"
+                required
+              />
             </div>
 
             <button
