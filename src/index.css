@@ -139,6 +139,48 @@ textarea,
   user-select: text;
 }
 
+/* ============================================================
+   Focus clavier propre, façon Discord.
+   Par défaut, chaque navigateur dessine son propre contour de
+   focus natif (ex : rectangle bleu du navigateur, ou en Firefox un
+   pointillé qui ne fait que le tour du texte d'un bouton) — ça
+   ressemble à une sélection de texte et ce n'est pas cohérent avec
+   le reste de l'UI. On le supprime partout, puis on le remplace par
+   un anneau propre et cohérent, mais UNIQUEMENT quand la navigation
+   se fait au clavier (:focus-visible) — un clic à la souris ne doit
+   jamais afficher ce contour.
+   ============================================================ */
+*:focus {
+  outline: none;
+}
+
+*:focus-visible {
+  outline: 2px solid #5865f2;
+  outline-offset: 2px;
+  border-radius: 6px;
+}
+
+/* Les boutons et liens (salons, serveurs, icônes, etc.) ne doivent
+   jamais afficher le moindre contour/surlignage au focus — seuls les
+   vrais champs de saisie (input/textarea/select/contenteditable)
+   gardent l'anneau ci-dessus. */
+button:focus,
+button:focus-visible,
+a:focus,
+a:focus-visible,
+[role="button"]:focus,
+[role="button"]:focus-visible {
+  outline: none;
+  box-shadow: none;
+}
+
+/* Firefox dessine en plus un pointillé interne propre aux <button>,
+   qui ignore "outline: none" et qui est justement ce qui ressemble à
+   une sélection de texte collée au libellé — on le désactive aussi. */
+button::-moz-focus-inner {
+  border: 0;
+}
+
 /* Barre de défilement personnalisée pour la zone de chat */
 .chat-scrollbar {
   scrollbar-width: thin;

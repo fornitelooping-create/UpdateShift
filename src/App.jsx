@@ -1,3 +1,4 @@
+import { useEffect } from 'react';
 import { Toaster } from "@/components/ui/toaster"
 import { QueryClientProvider } from '@tanstack/react-query'
 import { queryClientInstance } from '@/lib/query-client'
@@ -31,6 +32,24 @@ function ShiftRoot() {
 
 function App() {
   useAppUpdateCheck();
+
+  // Sur Discord, la touche Tab ne fait littéralement rien : elle ne
+  // déplace jamais le focus vers un autre bouton/salon/champ. On
+  // reproduit ça ici en bloquant Tab au niveau de toute l'appli (phase
+  // de capture, donc avant même que le navigateur ne change le focus).
+  // Les gestions locales de Tab (ex : valider une mention/commande dans
+  // le champ de message) continuent de fonctionner normalement, puisque
+  // seul le comportement PAR DÉFAUT du navigateur (changer le focus)
+  // est annulé — pas l'événement lui-même.
+  useEffect(() => {
+    const blockTab = (e) => {
+      if (e.key === "Tab") {
+        e.preventDefault();
+      }
+    };
+    window.addEventListener("keydown", blockTab, true);
+    return () => window.removeEventListener("keydown", blockTab, true);
+  }, []);
 
   return (
     <ThemeProvider>

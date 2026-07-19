@@ -73,6 +73,8 @@ export default function ShiftApp() {
 
 
   const [servers, setServers] = useState([]);
+  const [draggedServerId, setDraggedServerId] = useState(null);
+  const [dragOverServerId, setDragOverServerId] = useState(null);
   const [selectedServer, setSelectedServer] = useState(null);
   const [channels, setChannels] = useState([]);
   const [members, setMembers] = useState([]);
@@ -371,10 +373,63 @@ export default function ShiftApp() {
     // du serveur actuellement affiché, pour pouvoir détecter une expulsion
     // même si on regarde un autre serveur ou une DM au moment où ça arrive.
     myMembershipsRef.current = new Map(memberships.map((m) => [m.id, m.server_id]));
+    const membershipByServerId = new Map(memberships.map((m) => [m.server_id, m]));
     const serverList = await Promise.all(
       memberships.map((m) => db.entities.Server.get(m.server_id))
     );
-    setServers(serverList.filter(Boolean));
+    // 🔥 Ordre personnel des serveurs (glisser-déposer, façon Discord) :
+    // on attache à chaque serveur l'id de l'adhésion et sa position
+    // enregistrée, puis on trie par position. Les serveurs sans position
+    // connue (jamais réordonnés, ou colonne pas encore migrée côté
+    // Supabase) restent à la fin, dans l'ordre reçu.
+    const withOrder = serverList
+      .filter(Boolean)
+      .map((s) => {
+        const membership = membershipByServerId.get(s.id);
+        return { ...s, _membershipId: membership?.id, _position: membership?.position };
+      });
+    withOrder.sort((a, b) => {
+      const pa = typeof a._position === "number" ? a._position : null;
+      const pb = typeof b._position === "number" ? b._position : null;
+      if (pa === null && pb === null) return 0;
+      if (pa === null) return 1;
+      if (pb === null) return -1;
+      return pa - pb;
+    });
+    setServers(withOrder);
+  };
+
+  // 🔥 Réorganise la liste des serveurs par glisser-déposer et persiste le
+  // nouvel ordre (par utilisateur) dans "server_members.position". Si la
+  // colonne n'existe pas encore côté Supabase, l'ordre reste quand même
+  // appliqué localement pour la session en cours — l'écriture échoue
+  // simplement en silence (avec un avertissement en console) au lieu de
+  // casser la réorganisation.
+  const reorderServers = (draggedId, targetId) => {
+    if (!draggedId || !targetId || draggedId === targetId) return;
+    setServers((prev) => {
+      const from = prev.findIndex((s) => s.id === draggedId);
+      const to = prev.findIndex((s) => s.id === targetId);
+      if (from === -1 || to === -1) return prev;
+      const next = prev.slice();
+      const [moved] = next.splice(from, 1);
+      next.splice(to, 0, moved);
+
+      Promise.all(
+        next.map((s, i) =>
+          s._membershipId && s._position !== i
+            ? db.entities.ServerMember.update(s._membershipId, { position: i }).catch((err) => {
+                console.warn(
+                  'Impossible d\'enregistrer l\'ordre des serveurs (colonne "position" manquante sur "server_members" ?)',
+                  err
+                );
+              })
+            : null
+        )
+      );
+
+      return next.map((s, i) => ({ ...s, _position: i }));
+    });
   };
 
   const loadServerData = async (serverId) => {
@@ -755,12 +810,31 @@ export default function ShiftApp() {
                 {servers.map((server) => (
                   <button
                     key={server.id}
+                    draggable
+                    onDragStart={() => setDraggedServerId(server.id)}
+                    onDragOver={(e) => {
+                      e.preventDefault();
+                      if (draggedServerId && draggedServerId !== server.id) setDragOverServerId(server.id);
+                    }}
+                    onDragLeave={() => setDragOverServerId((id) => (id === server.id ? null : id))}
+                    onDrop={(e) => {
+                      e.preventDefault();
+                      reorderServers(draggedServerId, server.id);
+                      setDraggedServerId(null);
+                      setDragOverServerId(null);
+                    }}
+                    onDragEnd={() => {
+                      setDraggedServerId(null);
+                      setDragOverServerId(null);
+                    }}
                     onClick={() => selectServer(server)}
                     title={server.name}
                     className={`relative w-12 h-12 flex items-center justify-center font-bold text-white transition-all ${
                       selectedServer?.id === server.id
                         ? "rounded-2xl bg-[#5865f2]"
                         : "rounded-3xl bg-[var(--bg-primary)] hover:bg-[#5865f2] hover:rounded-2xl"
+                    } ${draggedServerId === server.id ? "opacity-40" : ""} ${
+                      dragOverServerId === server.id ? "ring-2 ring-white/70" : ""
                     }`}
                   >
                     <div className="w-full h-full flex items-center justify-center overflow-hidden rounded-[inherit]">
@@ -997,12 +1071,31 @@ export default function ShiftApp() {
             {servers.map((server) => (
               <button
                 key={server.id}
+                draggable
+                onDragStart={() => setDraggedServerId(server.id)}
+                onDragOver={(e) => {
+                  e.preventDefault();
+                  if (draggedServerId && draggedServerId !== server.id) setDragOverServerId(server.id);
+                }}
+                onDragLeave={() => setDragOverServerId((id) => (id === server.id ? null : id))}
+                onDrop={(e) => {
+                  e.preventDefault();
+                  reorderServers(draggedServerId, server.id);
+                  setDraggedServerId(null);
+                  setDragOverServerId(null);
+                }}
+                onDragEnd={() => {
+                  setDraggedServerId(null);
+                  setDragOverServerId(null);
+                }}
                 onClick={() => selectServer(server)}
                 title={server.name}
                 className={`relative w-12 h-12 flex items-center justify-center font-bold text-white transition-all ${
                   selectedServer?.id === server.id
                     ? "rounded-2xl bg-[#5865f2]"
                     : "rounded-3xl bg-[var(--bg-primary)] hover:bg-[#5865f2] hover:rounded-2xl"
+                } ${draggedServerId === server.id ? "opacity-40" : ""} ${
+                  dragOverServerId === server.id ? "ring-2 ring-white/70" : ""
                 }`}
               >
                 <div className="w-full h-full flex items-center justify-center overflow-hidden rounded-[inherit]">

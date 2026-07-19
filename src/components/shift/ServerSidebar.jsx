@@ -289,6 +289,7 @@ function ChannelRow({ channel, selected, onClick, onContextMenu }) {
 
   return (
     <button
+      tabIndex={-1}
       onClick={onClick}
       onContextMenu={onContextMenu}
       className={`w-full flex items-center gap-1.5 px-2 py-1.5 rounded-lg transition text-sm ${
@@ -333,6 +334,7 @@ function VoiceChannelRow({
   return (
     <div className="mx-1 mb-0.5">
       <button
+        tabIndex={-1}
         onClick={handleJoin}
         onContextMenu={onContextMenu}
         className={`w-full flex items-center gap-1.5 px-2 py-1.5 rounded-lg transition text-sm ${

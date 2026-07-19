@@ -23,7 +23,8 @@ const AVAILABLE_COMMANDS = [
   { name: "clear", usage: "/clear:20", description: "Supprime les 20 derniers messages de ce salon." },
   { name: "ban", usage: '/ban "pseudo"', description: "Bannit définitivement un membre du serveur." },
   { name: "ban", usage: '/ban "pseudo" "45s"', description: "Bannit temporairement (30s, 30m, 2h, 7d, 1w...)." },
-  { name: "unban", usage: '/unban "pseudo"', description: "Lève le bannissement d'un membre." }
+  { name: "unban", usage: '/unban "pseudo"', description: "Lève le bannissement d'un membre." },
+  { name: "help", usage: "/help", description: "Rappelle la liste des commandes disponibles." }
 ];
 
 // Parse une durée du type "30m", "2h", "7d", "1w" (secondes/minutes/heures/
@@ -43,6 +44,12 @@ function parseDuration(raw) {
   else if (unit.startsWith("w") || unit.startsWith("sem")) key = "w";
   else key = "m";
   return value * MS[key];
+}
+
+// Échappe les caractères spéciaux d'une chaîne pour l'utiliser telle quelle
+// dans une RegExp (utilisé par le système de mentions "@").
+function escapeRegExp(str) {
+  return String(str || "").replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
 export default function ChatArea({
@@ -86,9 +93,13 @@ export default function ChatArea({
   const [reactionPickerFor, setReactionPickerFor] = useState(null);
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
   const [commandNotice, setCommandNotice] = useState(null); // { type: "success" | "error", text }
+  const [commandSelectedIndex, setCommandSelectedIndex] = useState(0);
+  const [mentionState, setMentionState] = useState(null); // { query, start, end }
+  const [mentionSelectedIndex, setMentionSelectedIndex] = useState(0);
   const bottomRef = useRef(null);
   const scrollContainerRef = useRef(null);
   const fileInputRef = useRef(null);
+  const messageInputRef = useRef(null);
 
   const contextId = isDM ? dmConversation?.id : channel?.id;
 
@@ -306,11 +317,155 @@ export default function ChatArea({
     }
   };
 
+  // -----------------------------------------------------------
+  // Mentions "@" façon Discord
+  // -----------------------------------------------------------
+
+  // Liste des personnes "mentionnables" dans le contexte actuel : les
+  // membres du serveur pour un salon, ou les participants de la conversation
+  // pour un MP (utile pour les groupes).
+  const getMentionableUsers = () => {
+    if (isDM) {
+      const ids = dmConversation?.participants || [];
+      const names = dmConversation?.participant_names || [];
+      return ids
+        .filter((id) => id !== currentUser.id)
+        .map((id) => {
+          const idx = ids.indexOf(id);
+          const live = liveProfiles?.[id];
+          return {
+            user_id: id,
+            username: live?.username || names[idx] || "utilisateur",
+            display_name: live?.display_name || live?.username || names[idx] || "utilisateur",
+            avatar: live?.avatar || null
+          };
+        });
+    }
+    return (serverMembers || []).map((m) => ({
+      user_id: m.user_id || m.id,
+      username: m.username,
+      display_name: m.display_name || m.username,
+      avatar: m.avatar,
+      status: m.status
+    }));
+  };
+
+  // Peut mentionner @everyone / @here : même logique de permission que les
+  // commandes de modération (propriétaire ou rôle avec "use_commands").
+  const canMentionEveryone = !isDM && (isOwner || canUseCommands);
+
+  // Détecte si le curseur est en train de taper une mention ("@" suivi de
+  // caractères sans espace) et met à jour l'état de l'autocomplétion.
+  const updateMentionState = (value, cursorPos) => {
+    const uptoCursor = value.slice(0, cursorPos);
+    const match = uptoCursor.match(/(?:^|\s)@([a-zA-Z0-9_.-]*)$/);
+    if (!match) {
+      setMentionState(null);
+      return;
+    }
+    const query = match[1];
+    const start = cursorPos - query.length - 1; // position du "@"
+    setMentionState({ query, start, end: cursorPos });
+    setMentionSelectedIndex(0);
+  };
+
+  const mentionCandidates = (() => {
+    if (!mentionState) return [];
+    const q = mentionState.query.toLowerCase();
+    const users = getMentionableUsers();
+    const people = users
+      .filter(
+        (u) => (u.username || "").toLowerCase().includes(q) || (u.display_name || "").toLowerCase().includes(q)
+      )
+      .slice(0, 8)
+      .map((u) => ({ kind: "user", ...u }));
+    const specials = [];
+    if (canMentionEveryone) {
+      if ("everyone".startsWith(q)) specials.push({ kind: "everyone" });
+      if ("here".startsWith(q)) specials.push({ kind: "here" });
+    }
+    return [...specials, ...people];
+  })();
+
+  // Insère la mention choisie (pseudo ou @everyone/@here) à la place du
+  // texte "@..." en cours de frappe, puis replace le curseur juste après.
+  const selectMention = (candidate) => {
+    if (!mentionState) return;
+    const name = candidate.kind === "user" ? candidate.username : candidate.kind;
+    const before = input.slice(0, mentionState.start);
+    const after = input.slice(mentionState.end);
+    const insertion = `@${name} `;
+    const nextValue = `${before}${insertion}${after}`;
+    setInput(nextValue);
+    setMentionState(null);
+    requestAnimationFrame(() => {
+      const el = messageInputRef.current;
+      if (el) {
+        const pos = before.length + insertion.length;
+        el.focus();
+        el.setSelectionRange(pos, pos);
+      }
+    });
+  };
+
+  // Transforme le texte d'un message en morceaux de texte simple et de
+  // "pastilles" cliquables pour chaque mention @pseudo / @everyone / @here.
+  const renderMessageContent = (content) => {
+    if (!content) return null;
+    const usernames = getMentionableUsers()
+      .map((u) => u.username)
+      .filter(Boolean)
+      .sort((a, b) => b.length - a.length); // plus long d'abord pour éviter les sous-matches
+    const alternatives = ["everyone", "here", ...usernames.map(escapeRegExp)];
+    const pattern = new RegExp(`@(${alternatives.join("|")})(?![\\w.-])`, "gi");
+
+    const parts = [];
+    let lastIndex = 0;
+    let match;
+    let key = 0;
+    while ((match = pattern.exec(content)) !== null) {
+      if (match.index > lastIndex) parts.push(content.slice(lastIndex, match.index));
+      const raw = match[0];
+      const nameLower = match[1].toLowerCase();
+      const isSpecial = nameLower === "everyone" || nameLower === "here";
+      const user = !isSpecial
+        ? getMentionableUsers().find((u) => (u.username || "").toLowerCase() === nameLower)
+        : null;
+      const isMe = user && user.user_id === currentUser.id;
+      parts.push(
+        <span
+          key={`mention-${key++}`}
+          onClick={user ? () => setSelectedUser({ user_id: user.user_id, username: user.username }) : undefined}
+          className={`px-1 rounded font-medium ${user ? "cursor-pointer" : ""} ${
+            isMe || isSpecial
+              ? "bg-[#f0b232]/25 text-[#f0b232] hover:bg-[#f0b232]/40"
+              : "bg-[#5865f2]/25 text-[#c9cdfb] hover:bg-[#5865f2]/40"
+          } transition`}
+        >
+          {raw}
+        </span>
+      );
+      lastIndex = match.index + raw.length;
+    }
+    if (lastIndex < content.length) parts.push(content.slice(lastIndex));
+    return parts.length > 0 ? parts : content;
+  };
+
+  // Est-ce que ce message mentionne l'utilisateur courant (pour le
+  // surlignage façon Discord de la ligne de message) ?
+  const messageMentionsMe = (content) => {
+    if (!content) return false;
+    const uname = (currentUser.username || "").toLowerCase();
+    if (uname && new RegExp(`@${escapeRegExp(uname)}(?![\\w.-])`, "i").test(content)) return true;
+    if (!isDM && (/@everyone(?![\w.-])/i.test(content) || /@here(?![\w.-])/i.test(content))) return true;
+    return false;
+  };
+
   // Retourne true si le texte était une commande (traitée ou rejetée), pour
   // que sendMessage() sache qu'il ne faut pas l'envoyer comme message normal.
   const handleCommand = async (raw) => {
     const trimmed = raw.trim();
-    if (!/^\/(clear|ban|unban)\b/i.test(trimmed)) return false;
+    if (!/^\/(clear|ban|unban|help)\b/i.test(trimmed)) return false;
 
     if (isDM || !channel) {
       setCommandNotice({ type: "error", text: "Les commandes ne sont disponibles que dans les salons d'un serveur." });
@@ -318,6 +473,14 @@ export default function ChatArea({
     }
     if (!isOwner && !canUseCommands) {
       setCommandNotice({ type: "error", text: "Tu n'as pas la permission d'utiliser les commandes." });
+      return true;
+    }
+
+    if (/^\/help\s*$/i.test(trimmed)) {
+      setCommandNotice({
+        type: "success",
+        text: 'Commandes : /clear:20 · /ban "pseudo" ["durée"] · /unban "pseudo". Tape "/" pour voir le détail.'
+      });
       return true;
     }
 
@@ -372,6 +535,7 @@ export default function ChatArea({
       const wasCommand = await handleCommand(input);
       if (wasCommand) {
         setInput("");
+        setMentionState(null);
         return;
       }
     }
@@ -406,6 +570,7 @@ export default function ChatArea({
 
       await db.entities.Message.create(messageData);
       setInput("");
+      setMentionState(null);
       clearPendingFile();
     } finally {
       setSending(false);
@@ -453,6 +618,66 @@ export default function ChatArea({
   const insertEmoji = (emoji) => {
     setInput((prev) => prev + emoji);
     setShowEmojiPicker(false);
+  };
+
+  const handleComposerChange = (e) => {
+    const value = e.target.value;
+    setInput(value);
+    updateMentionState(value, e.target.selectionStart ?? value.length);
+    if (value.startsWith("/")) setCommandSelectedIndex(0);
+  };
+
+  const handleComposerKeyDown = (e) => {
+    // Navigation clavier dans la liste de mentions (@...), façon Discord.
+    if (mentionState && mentionCandidates.length > 0) {
+      if (e.key === "ArrowDown") {
+        e.preventDefault();
+        setMentionSelectedIndex((i) => (i + 1) % mentionCandidates.length);
+        return;
+      }
+      if (e.key === "ArrowUp") {
+        e.preventDefault();
+        setMentionSelectedIndex((i) => (i - 1 + mentionCandidates.length) % mentionCandidates.length);
+        return;
+      }
+      if (e.key === "Enter" || e.key === "Tab") {
+        e.preventDefault();
+        selectMention(mentionCandidates[mentionSelectedIndex]);
+        return;
+      }
+      if (e.key === "Escape") {
+        e.preventDefault();
+        setMentionState(null);
+        return;
+      }
+    }
+
+    // Navigation clavier dans l'aide des commandes (/...), façon Discord.
+    if (showCommandHelp && filteredCommands.length > 0) {
+      if (e.key === "ArrowDown") {
+        e.preventDefault();
+        setCommandSelectedIndex((i) => (i + 1) % filteredCommands.length);
+        return;
+      }
+      if (e.key === "ArrowUp") {
+        e.preventDefault();
+        setCommandSelectedIndex((i) => (i - 1 + filteredCommands.length) % filteredCommands.length);
+        return;
+      }
+      if (e.key === "Enter" || e.key === "Tab") {
+        e.preventDefault();
+        setInput(filteredCommands[commandSelectedIndex].usage);
+        return;
+      }
+    }
+
+    // Le champ de message ne doit jamais laisser le navigateur gérer Tab
+    // (ce qui ferait sauter le focus vers un autre bouton de la page, comme
+    // dans un formulaire classique) : dans le composer, Tab ne sert qu'à
+    // valider une mention/commande suggérée ci-dessus, sinon on l'ignore.
+    if (e.key === "Tab") {
+      e.preventDefault();
+    }
   };
 
   const dmTitle = () => {
@@ -608,9 +833,17 @@ export default function ChatArea({
           const isEditing = editingId === msg.id;
           const isImage = msg.file_type?.startsWith("image/");
           const isVideo = msg.file_type?.startsWith("video/");
+          const mentionsMe = !isOwn && messageMentionsMe(msg.content);
 
           return (
-            <div key={msg.id} className="flex items-start gap-3 group px-1 py-1 rounded-lg hover:bg-black/10">
+            <div
+              key={msg.id}
+              className={`flex items-start gap-3 group px-1 py-1 rounded-lg transition ${
+                mentionsMe
+                  ? "bg-[#f0b232]/10 border-l-2 border-[#f0b232] pl-2 hover:bg-[#f0b232]/15"
+                  : "hover:bg-black/10"
+              }`}
+            >
               <button onClick={() => setSelectedUser({ user_id: msg.sender_id, username: msg.sender_name })}>
                 <UserAvatar
                   user={
@@ -649,7 +882,9 @@ export default function ChatArea({
                 ) : (
                   <>
                     {msg.content && (
-                      <p className="selectable-text text-[var(--text-normal)] text-sm whitespace-pre-wrap break-words">{msg.content}</p>
+                      <p className="selectable-text text-[var(--text-normal)] text-sm whitespace-pre-wrap break-words">
+                        {renderMessageContent(msg.content)}
+                      </p>
                     )}
                     {msg.file_url && (isImage || isVideo) && (
                       <button
@@ -762,10 +997,54 @@ export default function ChatArea({
                   key={i}
                   type="button"
                   onClick={() => setInput(cmd.usage)}
-                  className="w-full flex flex-col items-start px-2 py-1.5 rounded hover:bg-[var(--bg-modifier-hover)] transition text-left"
+                  onMouseEnter={() => setCommandSelectedIndex(i)}
+                  className={`w-full flex flex-col items-start px-2 py-1.5 rounded transition text-left ${
+                    i === commandSelectedIndex ? "bg-[var(--bg-modifier-hover)]" : "hover:bg-[var(--bg-modifier-hover)]"
+                  }`}
                 >
                   <span className="text-white text-sm font-mono">{cmd.usage}</span>
                   <span className="text-[var(--text-muted)] text-xs">{cmd.description}</span>
+                </button>
+              ))}
+            </div>
+            <p className="text-[var(--text-muted)] text-[10px] px-2 pt-1">↑↓ pour naviguer · Entrée / Tab pour choisir · Échap pour fermer</p>
+          </div>
+        )}
+        {mentionState && mentionCandidates.length > 0 && (
+          <div className="absolute bottom-full left-0 mb-2 bg-[var(--bg-secondary)] border border-[var(--bg-tertiary)] rounded-lg shadow-xl p-2 w-72 max-w-[90vw] z-20">
+            <p className="text-[var(--text-muted)] text-[10px] uppercase font-semibold px-2 pb-1">
+              Mentionner quelqu'un
+            </p>
+            <div className="space-y-0.5 max-h-60 overflow-y-auto">
+              {mentionCandidates.map((c, i) => (
+                <button
+                  key={c.kind === "user" ? c.user_id : c.kind}
+                  type="button"
+                  onClick={() => selectMention(c)}
+                  onMouseEnter={() => setMentionSelectedIndex(i)}
+                  className={`w-full flex items-center gap-2 px-2 py-1.5 rounded transition text-left ${
+                    i === mentionSelectedIndex ? "bg-[var(--bg-modifier-hover)]" : "hover:bg-[var(--bg-modifier-hover)]"
+                  }`}
+                >
+                  {c.kind === "user" ? (
+                    <>
+                      <UserAvatar user={c} size={22} />
+                      <span className="text-white text-sm truncate">{c.display_name || c.username}</span>
+                      {c.display_name && c.display_name !== c.username && (
+                        <span className="text-[var(--text-muted)] text-xs truncate">@{c.username}</span>
+                      )}
+                    </>
+                  ) : (
+                    <>
+                      <div className="w-[22px] h-[22px] rounded-full bg-[#5865f2] flex items-center justify-center flex-shrink-0">
+                        <Users className="w-3 h-3 text-white" />
+                      </div>
+                      <span className="text-white text-sm">@{c.kind}</span>
+                      <span className="text-[var(--text-muted)] text-xs">
+                        {c.kind === "everyone" ? "Notifier tout le monde" : "Notifier les membres actifs"}
+                      </span>
+                    </>
+                  )}
                 </button>
               ))}
             </div>
@@ -827,8 +1106,11 @@ export default function ChatArea({
             )}
           </div>
           <input
+            ref={messageInputRef}
             value={input}
-            onChange={(e) => setInput(e.target.value)}
+            onChange={handleComposerChange}
+            onKeyDown={handleComposerKeyDown}
+            onClick={(e) => updateMentionState(e.target.value, e.target.selectionStart ?? e.target.value.length)}
             placeholder={isDM ? `Message @${title}` : `Envoyer un message dans #${channel?.name || ""}`}
             className="flex-1 bg-transparent text-white text-sm outline-none placeholder:text-[var(--text-muted)]"
           />
