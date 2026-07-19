@@ -8,7 +8,6 @@ import UserProfileModal from "./UserProfileModal";
 import MediaPreview from "./MediaPreview";
 import moment from "moment";
 import "moment/locale/fr";
-import { sendShiftSystemMessage } from "@/lib/shiftBot";
 moment.locale("fr");
 
 const QUICK_EMOJIS = ["👍", "❤️", "😂", "😮", "😢", "🎉"];
@@ -22,7 +21,7 @@ const COMPOSER_EMOJIS = [
 const AVAILABLE_COMMANDS = [
   { name: "clear", usage: "/clear:20", description: "Supprime les 20 derniers messages de ce salon." },
   { name: "ban", usage: '/ban "pseudo"', description: "Bannit définitivement un membre du serveur." },
-  { name: "ban", usage: '/ban "pseudo" "45s"', description: "Bannit temporairement (30s, 30m, 2h, 7d, 1w...)." },
+  { name: "ban", usage: '/ban "pseudo" "7d"', description: "Bannit temporairement (30m, 2h, 7d, 1w...)." },
   { name: "unban", usage: '/unban "pseudo"', description: "Lève le bannissement d'un membre." }
 ];
 
@@ -63,7 +62,6 @@ export default function ChatArea({
   isOwner,
   canUseCommands,
   serverOwnerId,
-  serverName,
   onMemberRemoved,
 
   // 🔥 Vocal
@@ -198,7 +196,7 @@ export default function ChatArea({
     if (durationRaw) {
       const ms = parseDuration(durationRaw);
       if (!ms) {
-        setCommandNotice({ type: "error", text: `Durée invalide : "${durationRaw}". Exemple : 30s, 30m, 2h, 7d.` });
+        setCommandNotice({ type: "error", text: `Durée invalide : "${durationRaw}". Exemple : 30m, 2h, 7d.` });
         return;
       }
       expiresAt = new Date(Date.now() + ms).toISOString();
@@ -259,19 +257,6 @@ export default function ChatArea({
           : `${name} banni définitivement.`
         : `${name} a été expulsé, mais son retour ne pourra pas être bloqué (table "bans" absente sur Supabase).`
     });
-
-    // 3. On prévient la personne bannie par message privé, au nom de "Shift" —
-    //    ne bloque jamais la commande si l'envoi échoue (voir shiftBot.js).
-    const srvName = serverName || "un serveur";
-    sendShiftSystemMessage(
-      targetUserId,
-      name,
-      persisted
-        ? expiresAt
-          ? `🔨 Tu as été banni de **${srvName}** jusqu'au ${moment(expiresAt).format("DD MMM YYYY, HH:mm")}.`
-          : `🔨 Tu as été banni définitivement de **${srvName}**.`
-        : `🔨 Tu as été expulsé de **${srvName}**.`
-    );
   };
 
   const runUnban = async (usernameRaw) => {
@@ -285,21 +270,6 @@ export default function ChatArea({
       }
       await Promise.all(matches.map((b) => db.entities.Ban.delete(b.id)));
       setCommandNotice({ type: "success", text: `${usernameRaw} a été débanni.` });
-
-      // Prévient chaque compte débanni par MP (au nom de "Shift"). Un même
-      // pseudo bannit théoriquement une seule fois, mais on couvre le cas
-      // de plusieurs lignes "bans" résiduelles pour le même user_id.
-      const srvName = serverName || "un serveur";
-      const notifiedIds = new Set();
-      matches.forEach((b) => {
-        if (!b.user_id || notifiedIds.has(b.user_id)) return;
-        notifiedIds.add(b.user_id);
-        sendShiftSystemMessage(
-          b.user_id,
-          b.username || usernameRaw,
-          `✅ Tu as été débanni de **${srvName}**. Tu peux à nouveau le rejoindre.`
-        );
-      });
     } catch (err) {
       console.error("Unban command failed", err);
       setCommandNotice({ type: "error", text: "Échec du débannissement." });

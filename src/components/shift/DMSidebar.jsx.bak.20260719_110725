@@ -4,10 +4,8 @@ import React, { useState, useEffect } from "react";
 
 import { Users, MessageCircle, X } from "lucide-react";
 import UserAvatar from "./UserAvatar";
-import UnreadBadge from "./UnreadBadge";
-import { SHIFT_BOT_ID, SHIFT_BOT_AVATAR } from "@/lib/shiftBot";
 
-export default function DMSidebar({ currentUser, selectedDM, onSelectDM, onSelectFriends, liveProfiles, unreadCounts = {} }) {
+export default function DMSidebar({ currentUser, selectedDM, onSelectDM, onSelectFriends, liveProfiles }) {
   const [conversations, setConversations] = useState([]);
   const [profiles, setProfiles] = useState({});
 
@@ -38,8 +36,7 @@ export default function DMSidebar({ currentUser, selectedDM, onSelectDM, onSelec
     const base = profiles[otherId] || {
       user_id: otherId,
       username: conv.participant_names?.find((n) => n !== (currentUser.display_name || currentUser.username)) || "Utilisateur",
-      status: "offline",
-      avatar: otherId === SHIFT_BOT_ID ? SHIFT_BOT_AVATAR : undefined
+      status: "offline"
     };
     // On superpose le cache temps réel (statut, avatar, etc.) par-dessus le
     // profil chargé une seule fois au montage, sinon le statut affiché ici
@@ -78,7 +75,6 @@ export default function DMSidebar({ currentUser, selectedDM, onSelectDM, onSelec
             const group = isGroup(conv);
             const other = group ? null : getOtherUser(conv);
             const isSelected = selectedDM?.id === conv.id;
-            const unread = unreadCounts[conv.id] || 0;
             return (
               <div
                 key={conv.id}
@@ -92,17 +88,14 @@ export default function DMSidebar({ currentUser, selectedDM, onSelectDM, onSelec
                   isSelected ? "bg-[var(--bg-modifier-hover)] text-white" : "hover:bg-[var(--bg-modifier-hover)] text-[var(--text-muted)] hover:text-[var(--text-normal)]"
                 }`}
               >
-                <div className="relative flex-shrink-0">
-                  {group ? (
-                    <div className="w-8 h-8 rounded-full bg-[#5865f2] flex items-center justify-center">
-                      <Users className="w-4 h-4 text-white" />
-                    </div>
-                  ) : (
-                    <UserAvatar user={other} size={32} showStatus />
-                  )}
-                  <UnreadBadge count={unread} size="small" />
-                </div>
-                <span className={`flex-1 text-sm truncate ${unread > 0 ? "text-white font-semibold" : "font-medium"}`}>
+                {group ? (
+                  <div className="w-8 h-8 rounded-full bg-[#5865f2] flex items-center justify-center flex-shrink-0">
+                    <Users className="w-4 h-4 text-white" />
+                  </div>
+                ) : (
+                  <UserAvatar user={other} size={32} showStatus />
+                )}
+                <span className="flex-1 text-sm truncate font-medium">
                   {group ? getConvDisplayName(conv) : other.display_name || other.username}
                 </span>
                 <button

@@ -10,6 +10,7 @@ import { ShiftAuthContext } from "@/lib/useShiftAuth";
 import { Plus, Settings, Home, LogOut, ChevronLeft, Compass } from "lucide-react";
 import { useIsMobile } from "@/hooks/use-mobile";
 import UserAvatar from "@/components/shift/UserAvatar";
+import UnreadBadge from "@/components/shift/UnreadBadge";
 import ServerSidebar from "@/components/shift/ServerSidebar";
 import MemberList from "@/components/shift/MemberList";
 import ChatArea from "@/components/shift/ChatArea";
@@ -114,6 +115,20 @@ export default function ShiftApp() {
 
   const selectedServerRef = useRef(null);
 
+  // ---------------------------------------------------------------
+  // Badges "non lu" (petit rond rouge avec un chiffre) sur les icônes de
+  // serveur et les conversations privées. Compteurs { id: nombre }.
+  // ---------------------------------------------------------------
+  const [unreadServers, setUnreadServers] = useState({});
+  const [unreadDMs, setUnreadDMs] = useState({});
+  // Correspondance channel_id -> server_id pour TOUS les serveurs dont je
+  // suis membre (pas seulement celui affiché), afin de savoir à quel
+  // serveur rattacher un message reçu pendant qu'on regarde autre chose.
+  const channelServerMapRef = useRef(new Map());
+  // Refs à jour de la conversation/serveur actuellement ouverts, lues par
+  // la souscription temps réel globale (qui ne doit tourner qu'une fois).
+  const selectedDMRef = useRef(null);
+
   const MOBILE_MAX_PAGE = () => (selectedServerRef.current ? 2 : 1);
 
   const setMobilePage = (updater) => {
@@ -184,15 +199,55 @@ export default function ShiftApp() {
   // (ChatArea a son propre abonnement "Message" pour afficher les messages
   // de la conversation ouverte — grâce au multiplexage dans localDb.js les
   // deux abonnements coexistent sans se marcher dessus.)
+  //
+  // On en profite pour incrémenter les compteurs "non lu" (badges rouges)
+  // sur l'icône du serveur concerné, ou sur la conversation privée
+  // concernée — sauf si c'est justement ce qu'on est déjà en train de
+  // regarder.
   useEffect(() => {
     if (!user?.id) return;
     const unsubscribe = db.entities.Message.subscribe(({ type, data }) => {
-      if (type === "create" && data && data.sender_id !== user.id) {
-        sounds.playNotification();
+      if (type !== "create" || !data || data.sender_id === user.id) return;
+      sounds.playNotification();
+
+      if (data.dm_conversation_id) {
+        if (selectedDMRef.current?.id === data.dm_conversation_id) return;
+        setUnreadDMs((prev) => ({
+          ...prev,
+          [data.dm_conversation_id]: (prev[data.dm_conversation_id] || 0) + 1
+        }));
+        return;
+      }
+
+      if (data.channel_id) {
+        const srvId = channelServerMapRef.current.get(data.channel_id);
+        if (!srvId || selectedServerRef.current?.id === srvId) return;
+        setUnreadServers((prev) => ({ ...prev, [srvId]: (prev[srvId] || 0) + 1 }));
       }
     });
     return unsubscribe;
   }, [user?.id]);
+
+  // Construit (et garde à jour) la correspondance channel_id -> server_id
+  // pour TOUS mes serveurs, pas seulement celui actuellement ouvert — sinon
+  // impossible de savoir à quel serveur rattacher un message reçu pendant
+  // qu'on regarde un autre serveur (ou une DM).
+  useEffect(() => {
+    if (servers.length === 0) return;
+    let cancelled = false;
+    (async () => {
+      const lists = await Promise.all(
+        servers.map((s) => db.entities.Channel.filter({ server_id: s.id }))
+      );
+      if (cancelled) return;
+      lists.forEach((chans, i) => {
+        (chans || []).forEach((c) => channelServerMapRef.current.set(c.id, servers[i].id));
+      });
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [servers]);
 
   useEffect(() => {
     loadServers();
@@ -307,6 +362,7 @@ export default function ShiftApp() {
     ]);
     const sortedChannels = chans.slice().sort((a, b) => (a.position || 0) - (b.position || 0));
     setChannels(sortedChannels);
+    sortedChannels.forEach((c) => channelServerMapRef.current.set(c.id, serverId));
 
     setMembers(mems);
     setRoles(rls);
@@ -329,6 +385,12 @@ export default function ShiftApp() {
     setSelectedDM(null);
     setSelectedDMUser(null);
     setShowFriends(false);
+    setUnreadServers((prev) => {
+      if (!prev[server.id]) return prev;
+      const next = { ...prev };
+      delete next[server.id];
+      return next;
+    });
     // Pas de changement de page ici : sur mobile, la page 0 contient déjà
     // le rail des serveurs ET la liste des salons côte à côte (comme sur
     // desktop) — sélectionner un serveur ne fait que changer ce qui
@@ -361,8 +423,23 @@ export default function ShiftApp() {
     setSelectedDMUser(otherUser);
     setShowFriends(false);
     cacheProfiles(conv?.participants || []);
+    if (conv?.id) {
+      setUnreadDMs((prev) => {
+        if (!prev[conv.id]) return prev;
+        const next = { ...prev };
+        delete next[conv.id];
+        return next;
+      });
+    }
     if (isMobile) goToMobilePage(1);
   };
+
+  // Ref à jour de la DM actuellement ouverte, lue par la souscription
+  // temps réel globale des messages (voir plus haut) pour savoir si un
+  // nouveau message doit incrémenter un badge ou non.
+  useEffect(() => {
+    selectedDMRef.current = selectedDM;
+  }, [selectedDM]);
 
   // Garde une ref à jour de selectedServer (lisible depuis les listeners
   // tactiles sans avoir à réattacher les listeners à chaque changement), et
@@ -616,6 +693,10 @@ export default function ShiftApp() {
     return { ...created, requester_id: user.id, receiver_id: targetUserId, status: "pending" };
   };
 
+  // Total des MP non lus, toutes conversations confondues — affiché sur
+  // le bouton "Accueil" (qui donne accès à la liste des DM).
+  const totalUnreadDMs = Object.values(unreadDMs).reduce((sum, n) => sum + n, 0);
+
   return (
     <div className="h-screen w-screen flex bg-[var(--bg-tertiary)] overflow-hidden relative">
       <ThemeBackground />
@@ -638,11 +719,12 @@ export default function ShiftApp() {
                 <button
                   onClick={goHome}
                   title="Accueil"
-                  className={`w-12 h-12 flex items-center justify-center transition-all ${
+                  className={`relative w-12 h-12 flex items-center justify-center transition-all ${
                     !selectedServer ? "rounded-2xl bg-[#5865f2] text-white" : "rounded-3xl bg-[var(--bg-primary)] text-[var(--text-normal)] hover:bg-[#5865f2] hover:rounded-2xl hover:text-white"
                   }`}
                 >
                   <Home className="w-6 h-6" />
+                  <UnreadBadge count={totalUnreadDMs} />
                 </button>
 
                 <div className="w-8 h-[2px] bg-[var(--bg-modifier-hover)] rounded-full" />
@@ -652,7 +734,7 @@ export default function ShiftApp() {
                     key={server.id}
                     onClick={() => selectServer(server)}
                     title={server.name}
-                    className={`w-12 h-12 flex items-center justify-center font-bold text-white transition-all overflow-hidden ${
+                    className={`relative w-12 h-12 flex items-center justify-center font-bold text-white transition-all overflow-hidden ${
                       selectedServer?.id === server.id
                         ? "rounded-2xl bg-[#5865f2]"
                         : "rounded-3xl bg-[var(--bg-primary)] hover:bg-[#5865f2] hover:rounded-2xl"
@@ -663,6 +745,7 @@ export default function ShiftApp() {
                     ) : (
                       server.name?.charAt(0).toUpperCase()
                     )}
+                    <UnreadBadge count={unreadServers[server.id]} />
                   </button>
                 ))}
 
@@ -733,6 +816,7 @@ export default function ShiftApp() {
                       goToMobilePage(1);
                     }}
                     liveProfiles={liveProfiles}
+                    unreadCounts={unreadDMs}
                   />
                 </div>
               )}
@@ -773,6 +857,7 @@ export default function ShiftApp() {
                     isOwner={isMemberOwner}
                     canUseCommands={myPermissions.canUseCommands}
                     serverOwnerId={selectedServer?.owner_id}
+                    serverName={selectedServer?.name}
                     onMemberRemoved={handleMemberRemovedLocally}
                     voiceMembers={voiceMembers}
                     currentVoiceChannel={currentVoiceChannel}
@@ -874,11 +959,12 @@ export default function ShiftApp() {
             <button
               onClick={goHome}
               title="Accueil"
-              className={`w-12 h-12 flex items-center justify-center transition-all ${
+              className={`relative w-12 h-12 flex items-center justify-center transition-all ${
                 !selectedServer ? "rounded-2xl bg-[#5865f2] text-white" : "rounded-3xl bg-[var(--bg-primary)] text-[var(--text-normal)] hover:bg-[#5865f2] hover:rounded-2xl hover:text-white"
               }`}
             >
               <Home className="w-6 h-6" />
+              <UnreadBadge count={totalUnreadDMs} />
             </button>
 
             <div className="w-8 h-[2px] bg-[var(--bg-modifier-hover)] rounded-full" />
@@ -888,7 +974,7 @@ export default function ShiftApp() {
                 key={server.id}
                 onClick={() => selectServer(server)}
                 title={server.name}
-                className={`w-12 h-12 flex items-center justify-center font-bold text-white transition-all overflow-hidden ${
+                className={`relative w-12 h-12 flex items-center justify-center font-bold text-white transition-all overflow-hidden ${
                   selectedServer?.id === server.id
                     ? "rounded-2xl bg-[#5865f2]"
                     : "rounded-3xl bg-[var(--bg-primary)] hover:bg-[#5865f2] hover:rounded-2xl"
@@ -899,6 +985,7 @@ export default function ShiftApp() {
                 ) : (
                   server.name?.charAt(0).toUpperCase()
                 )}
+                <UnreadBadge count={unreadServers[server.id]} />
               </button>
             ))}
 
@@ -969,6 +1056,7 @@ export default function ShiftApp() {
                   setSelectedDMUser(null);
                 }}
                 liveProfiles={liveProfiles}
+                unreadCounts={unreadDMs}
               />
             </div>
           )}
@@ -989,6 +1077,7 @@ export default function ShiftApp() {
                 isOwner={isMemberOwner}
                 canUseCommands={myPermissions.canUseCommands}
                 serverOwnerId={selectedServer?.owner_id}
+                serverName={selectedServer?.name}
                 onMemberRemoved={handleMemberRemovedLocally}
                 voiceMembers={voiceMembers}
                 currentVoiceChannel={currentVoiceChannel}
@@ -1158,4 +1247,4 @@ export default function ShiftApp() {
       </div>
     </div>
   );
-}
+}
