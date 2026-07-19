@@ -119,8 +119,31 @@ export default function ShiftApp() {
   // Badges "non lu" (petit rond rouge avec un chiffre) sur les icônes de
   // serveur et les conversations privées. Compteurs { id: nombre }.
   // ---------------------------------------------------------------
-  const [unreadServers, setUnreadServers] = useState({});
-  const [unreadDMs, setUnreadDMs] = useState({});
+  const [unreadServers, setUnreadServers] = useState(() => {
+    try {
+      return JSON.parse(localStorage.getItem(`shift_unread_servers_${user?.id}`) || "{}");
+    } catch {
+      return {};
+    }
+  });
+  const [unreadDMs, setUnreadDMs] = useState(() => {
+    try {
+      return JSON.parse(localStorage.getItem(`shift_unread_dms_${user?.id}`) || "{}");
+    } catch {
+      return {};
+    }
+  });
+  // Persiste les compteurs "non lu" en localStorage pour qu'ils survivent à
+  // un rafraîchissement de la page (avant, ils étaient perdus car purement
+  // en mémoire React).
+  useEffect(() => {
+    if (!user?.id) return;
+    localStorage.setItem(`shift_unread_servers_${user.id}`, JSON.stringify(unreadServers));
+  }, [unreadServers, user?.id]);
+  useEffect(() => {
+    if (!user?.id) return;
+    localStorage.setItem(`shift_unread_dms_${user.id}`, JSON.stringify(unreadDMs));
+  }, [unreadDMs, user?.id]);
   // Correspondance channel_id -> server_id pour TOUS les serveurs dont je
   // suis membre (pas seulement celui affiché), afin de savoir à quel
   // serveur rattacher un message reçu pendant qu'on regarde autre chose.
@@ -734,17 +757,19 @@ export default function ShiftApp() {
                     key={server.id}
                     onClick={() => selectServer(server)}
                     title={server.name}
-                    className={`relative w-12 h-12 flex items-center justify-center font-bold text-white transition-all overflow-hidden ${
+                    className={`relative w-12 h-12 flex items-center justify-center font-bold text-white transition-all ${
                       selectedServer?.id === server.id
                         ? "rounded-2xl bg-[#5865f2]"
                         : "rounded-3xl bg-[var(--bg-primary)] hover:bg-[#5865f2] hover:rounded-2xl"
                     }`}
                   >
-                    {server.icon ? (
-                      <img src={server.icon} alt={server.name} className="w-full h-full object-cover" />
-                    ) : (
-                      server.name?.charAt(0).toUpperCase()
-                    )}
+                    <div className="w-full h-full flex items-center justify-center overflow-hidden rounded-[inherit]">
+                      {server.icon ? (
+                        <img src={server.icon} alt={server.name} className="w-full h-full object-cover" />
+                      ) : (
+                        server.name?.charAt(0).toUpperCase()
+                      )}
+                    </div>
                     <UnreadBadge count={unreadServers[server.id]} />
                   </button>
                 ))}
@@ -974,17 +999,19 @@ export default function ShiftApp() {
                 key={server.id}
                 onClick={() => selectServer(server)}
                 title={server.name}
-                className={`relative w-12 h-12 flex items-center justify-center font-bold text-white transition-all overflow-hidden ${
+                className={`relative w-12 h-12 flex items-center justify-center font-bold text-white transition-all ${
                   selectedServer?.id === server.id
                     ? "rounded-2xl bg-[#5865f2]"
                     : "rounded-3xl bg-[var(--bg-primary)] hover:bg-[#5865f2] hover:rounded-2xl"
                 }`}
               >
-                {server.icon ? (
-                  <img src={server.icon} alt={server.name} className="w-full h-full object-cover" />
-                ) : (
-                  server.name?.charAt(0).toUpperCase()
-                )}
+                <div className="w-full h-full flex items-center justify-center overflow-hidden rounded-[inherit]">
+                  {server.icon ? (
+                    <img src={server.icon} alt={server.name} className="w-full h-full object-cover" />
+                  ) : (
+                    server.name?.charAt(0).toUpperCase()
+                  )}
+                </div>
                 <UnreadBadge count={unreadServers[server.id]} />
               </button>
             ))}
